@@ -33,8 +33,12 @@ app.dependency_overrides[get_db] = override_get_db
 @pytest.fixture(autouse=True)
 def reset_db():
     Base.metadata.create_all(bind=engine)
+    # Clear in-memory rate-limit store so tests start clean
+    import app.routes.auth as _auth_mod
+    _auth_mod._rl_store.clear()
     yield
     Base.metadata.drop_all(bind=engine)
+    _auth_mod._rl_store.clear()
 
 
 @pytest.fixture

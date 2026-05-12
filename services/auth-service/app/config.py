@@ -9,8 +9,14 @@ class Settings(BaseSettings):
     # PostgreSQL (falls back to SQLite for bare local dev)
     DATABASE_URL: str = "sqlite:////app/data/auth.db"
 
-    # Redis — if set, refresh tokens are stored here instead of PostgreSQL
+    # Redis — if set, refresh tokens and rate-limit counters are stored here
     REDIS_URL: str = ""
+
+    # Google OAuth2 — leave blank to skip audience validation in dev
+    GOOGLE_CLIENT_ID: str = ""
+
+    # Base URL used in password-reset emails
+    FRONTEND_URL: str = "http://localhost:3000"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
