@@ -1,0 +1,62 @@
+# Node / React Native / Expo
+node_modules/
+.expo/
+dist/
+build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+.bundle/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings (contains dev secrets and local paths)
+.claude/settings.local.json
+
+# Docker volumes / logs
+*.log
+logs/
+
+# ML artifacts
+*.pt
+*.pth
+*.onnx
+*.tflite
+mlruns/
+
+# Screenshots (large binary, optional — remove line to include)
+# mobile/screenshots/

@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Product Gem",
+    "slug": "product-gem",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0A1628"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A1628"
+      },
+      "permissions": [
+        "RECORD_AUDIO",
+        "FOREGROUND_SERVICE",
+        "RECORD_AUDIO",
+        "FOREGROUND_SERVICE"
+      ],
+      "package": "com.anonymous.productgem"
+    },
+    "ios": {
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Product Gem needs microphone access to record your sleep audio."
+      }
+    }
+  }
+}

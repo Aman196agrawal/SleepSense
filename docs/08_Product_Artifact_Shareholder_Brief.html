@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SleepSense — Shareholder Brief 2026</title>
+<style>
+  /* ── Reset & base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy:    #0B1F3A;
+    --blue:    #1A4B8C;
+    --teal:    #0D9488;
+    --teal-lt: #CCFBF1;
+    --amber:   #F59E0B;
+    --rose:    #F43F5E;
+    --slate:   #64748B;
+    --light:   #F8FAFC;
+    --white:   #FFFFFF;
+    --text:    #1E293B;
+    --border:  #E2E8F0;
+    --radius:  12px;
+    --shadow:  0 4px 24px rgba(0,0,0,.08);
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text);
+    background: var(--white);
+  }
+
+  /* ── Page breaks ── */
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto 24px;
+    padding: 0;
+    background: var(--white);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    position: relative;
+  }
+
+  @media print {
+    body { background: var(--white); }
+    .page { margin: 0; box-shadow: none; page-break-after: always; }
+    .no-print { display: none !important; }
+  }
+
+  /* ── Typography ── */
+  h1 { font-size: 2.4rem; font-weight: 800; line-height: 1.1; }
+  h2 { font-size: 1.5rem; font-weight: 700; color: var(--navy); margin-bottom: .5rem; }
+  h3 { font-size: 1.05rem; font-weight: 600; color: var(--blue); margin-bottom: .35rem; }
+  p  { margin-bottom: .75rem; }
+
+  /* ── Utility ── */
+  .flex   { display: flex; }
+  .gap-1  { gap: .5rem; }
+  .gap-2  { gap: 1rem; }
+  .gap-3  { gap: 1.5rem; }
+  .col    { flex-direction: column; }
+  .wrap   { flex-wrap: wrap; }
+  .center { justify-content: center; align-items: center; }
+  .w-half { flex: 0 0 calc(50% - .5rem); }
+  .w-third{ flex: 0 0 calc(33.33% - .67rem); }
+  .bold   { font-weight: 700; }
+  .muted  { color: var(--slate); font-size: .85rem; }
+
+  /* ────────────────────────────────────────────
+     PAGE 1 — COVER
+  ──────────────────────────────────────────── */
+  .cover {
+    background: linear-gradient(145deg, var(--navy) 0%, #112B55 55%, #0D3D6E 100%);
+    color: var(--white);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 64px 56px;
+    height: 297mm;
+  }
+  .cover-eyebrow {
+    font-size: .75rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--teal);
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+  }
+  .cover h1 { color: var(--white); margin-bottom: 1.25rem; }
+  .cover h1 span { color: var(--teal); }
+  .cover-sub {
+    font-size: 1.15rem;
+    color: rgba(255,255,255,.75);
+    max-width: 520px;
+    margin-bottom: 3rem;
+    line-height: 1.7;
+  }
+  .cover-pills { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 4rem; }
+  .pill {
+    background: rgba(255,255,255,.1);
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 100px;
+    padding: .3rem .9rem;
+    font-size: .78rem;
+    color: rgba(255,255,255,.85);
+    font-weight: 500;
+  }
+  .cover-meta {
+    display: flex;
+    gap: 2rem;
+    border-top: 1px solid rgba(255,255,255,.15);
+    padding-top: 1.5rem;
+    width: 100%;
+  }
+  .cover-meta-item { color: rgba(255,255,255,.6); font-size: .8rem; }
+  .cover-meta-item strong { display: block; color: var(--white); font-size: .95rem; }
+
+  /* wave decoration */
+  .cover-wave {
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 340px;
+    opacity: .12;
+  }
+
+  /* ────────────────────────────────────────────
+     SHARED — inner page wrapper
+  ──────────────────────────────────────────── */
+  .inner {
+    padding: 52px 52px 40px;
+    height: 297mm;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* section header stripe */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+    padding-bottom: .75rem;
+    border-bottom: 2px solid var(--border);
+  }
+  .section-num {
+    background: var(--teal);
+    color: var(--white);
+    font-weight: 800;
+    font-size: .8rem;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .section-label {
+    font-size: .65rem;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--slate);
+    font-weight: 600;
+    display: block;
+    margin-bottom: .1rem;
+  }
+  .section-header h2 { margin: 0; }
+
+  /* footer strip */
+  .footer-strip {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .footer-strip span { font-size: .72rem; color: var(--slate); }
+
+  /* ────────────────────────────────────────────
+     PAGE 2 — THE PROBLEM
+  ──────────────────────────────────────────── */
+  /* Big stat cards */
+  .stat-grid {
+    display: flex;
+    gap: .75rem;
+    margin-bottom: 1.5rem;
+  }
+  .stat-card {
+    flex: 1;
+    background: var(--light);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem;
+    border-left: 4px solid var(--teal);
+  }
+  .stat-card .num {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--navy);
+    line-height: 1.1;
+    display: block;
+  }
+  .stat-card .label { font-size: .78rem; color: var(--slate); margin-top: .2rem; }
+
+  /* Problem gap box */
+  .gap-box {
+    background: linear-gradient(135deg, #FFF7ED, #FEF3C7);
+    border: 1px solid #FCD34D;
+    border-radius: var(--radius);
+    padding: 1.1rem 1.4rem;
+    margin-bottom: 1.5rem;
+  }
+  .gap-box .tag {
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #92400E;
+    margin-bottom: .4rem;
+    display: block;
+  }
+  .gap-box p { margin: 0; color: #78350F; font-size: .9rem; font-weight: 500; line-height: 1.6; }
+
+  /* Spectrum bar — from "too basic" to "too expensive" */
+  .spectrum-wrap { margin-bottom: 1.5rem; }
+  .spectrum-wrap h3 { margin-bottom: .75rem; }
+  .spectrum {
+    position: relative;
+    height: 8px;
+    background: linear-gradient(to right, #22C55E, #F59E0B, #EF4444);
+    border-radius: 100px;
+    margin: 2rem 0 1rem;
+  }
+  .spec-pins { display: flex; justify-content: space-between; }
+  .spec-pin {
+    text-align: center;
+    font-size: .73rem;
+    font-weight: 600;
+    position: relative;
+    max-width: 90px;
+  }
+  .spec-pin::before {
+    content: '';
+    display: block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    margin: 0 auto .3rem;
+  }
+  .spec-pin.green::before  { background: #22C55E; }
+  .spec-pin.amber::before  { background: #F59E0B; }
+  .spec-pin.red::before    { background: #EF4444; }
+  .spec-pin .name { color: var(--navy); }
+  .spec-pin .desc { color: var(--slate); font-weight: 400; }
+
+  /* ────────────────────────────────────────────
+     PAGE 3 — WHY WE'RE BUILDING IT
+  ──────────────────────────────────────────── */
+  .why-cards { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+  .why-card {
+    flex: 1;
+    border-radius: var(--radius);
+    padding: 1.2rem;
+    border: 1px solid var(--border);
+  }
+  .why-card .icon {
+    font-size: 1.6rem;
+    margin-bottom: .6rem;
+    display: block;
+  }
+  .why-card h3 { color: var(--navy); margin-bottom: .4rem; }
+  .why-card p { font-size: .83rem; color: var(--slate); margin: 0; }
+  .why-card.highlight {
+    background: var(--navy);
+    border-color: var(--navy);
+  }
+  .why-card.highlight h3, .why-card.highlight p { color: rgba(255,255,255,.85); }
+  .why-card.highlight .icon { filter: brightness(1.5); }
+
+  /* Market comparison */
+  .market-table { width: 100%; border-collapse: collapse; font-size: .82rem; margin-bottom: 1.5rem; }
+  .market-table th {
+    background: var(--navy);
+    color: var(--white);
+    padding: .6rem .8rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: .75rem;
+    letter-spacing: .04em;
+  }
+  .market-table td { padding: .55rem .8rem; border-bottom: 1px solid var(--border); }
+  .market-table tr:last-child { background: linear-gradient(135deg, #ECFDF5, #D1FAE5); font-weight: 700; }
+  .market-table tr:last-child td { border-bottom: none; }
+  .check  { color: #22C55E; font-weight: 700; }
+  .cross  { color: #EF4444; }
+  .partial{ color: #F59E0B; }
+
+  /* Mission quote */
+  .mission-quote {
+    background: linear-gradient(135deg, #EFF6FF, #DBEAFE);
+    border-left: 4px solid var(--blue);
+    border-radius: var(--radius);
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .mission-quote p {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--navy);
+    margin: 0;
+    font-style: italic;
+    line-height: 1.6;
+  }
+  .mission-quote .attr {
+    font-size: .75rem;
+    color: var(--slate);
+    margin-top: .5rem;
+    font-style: normal;
+    font-weight: 400;
+    display: block;
+  }
+
+  /* ────────────────────────────────────────────
+     PAGE 4 — HOW WE'RE BUILDING IT (PRODUCT)
+  ──────────────────────────────────────────── */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: .6rem;
+    margin-bottom: 1.5rem;
+  }
+  .feature-tile {
+    background: var(--light);
+    border-radius: 10px;
+    padding: .85rem .9rem;
+    border: 1px solid var(--border);
+  }
+  .feature-tile .f-num {
+    font-size: .65rem;
+    font-weight: 700;
+    color: var(--teal);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-bottom: .25rem;
+    display: block;
+  }
+  .feature-tile h3 { font-size: .82rem; color: var(--navy); margin-bottom: .25rem; }
+  .feature-tile p  { font-size: .73rem; color: var(--slate); margin: 0; line-height: 1.4; }
+
+  /* AI model table */
+  .model-table { width: 100%; border-collapse: collapse; font-size: .8rem; margin-bottom: 1.4rem; }
+  .model-table th {
+    background: var(--teal);
+    color: var(--white);
+    padding: .5rem .75rem;
+    text-align: left;
+    font-size: .73rem;
+    letter-spacing: .04em;
+  }
+  .model-table td { padding: .5rem .75rem; border-bottom: 1px solid var(--border); }
+  .model-table tr:nth-child(even) td { background: var(--light); }
+  .badge {
+    display: inline-block;
+    padding: .15rem .55rem;
+    border-radius: 100px;
+    font-size: .67rem;
+    font-weight: 700;
+  }
+  .badge-teal  { background: var(--teal-lt); color: #0F766E; }
+  .badge-amber { background: #FEF3C7; color: #92400E; }
+  .badge-navy  { background: #DBEAFE; color: #1E40AF; }
+
+  /* Data flow diagram */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    font-size: .72rem;
+    font-weight: 600;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-bottom: 1.4rem;
+    padding: .75rem 0;
+  }
+  .flow-node {
+    background: var(--navy);
+    color: var(--white);
+    border-radius: 8px;
+    padding: .5rem .75rem;
+    text-align: center;
+    white-space: nowrap;
+    font-size: .7rem;
+    line-height: 1.3;
+    flex-shrink: 0;
+  }
+  .flow-node.teal { background: var(--teal); }
+  .flow-node.blue { background: var(--blue); }
+  .flow-node.amber{ background: var(--amber); color: var(--navy); }
+  .flow-arrow {
+    flex-shrink: 0;
+    width: 24px;
+    text-align: center;
+    color: var(--slate);
+    font-size: 1rem;
+  }
+
+  /* ────────────────────────────────────────────
+     PAGE 5 — ROADMAP
+  ──────────────────────────────────────────── */
+  .roadmap { display: flex; gap: .75rem; margin-bottom: 1.5rem; }
+  .phase-card {
+    flex: 1;
+    border-radius: var(--radius);
+    padding: 1.1rem 1rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .phase-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+  }
+  .phase-card.p1 { background: #EFF6FF; border: 1px solid #BFDBFE; }
+  .phase-card.p1::before { background: var(--blue); }
+  .phase-card.p2 { background: #ECFDF5; border: 1px solid #BBF7D0; }
+  .phase-card.p2::before { background: var(--teal); }
+  .phase-card.p3 { background: #FFFBEB; border: 1px solid #FDE68A; }
+  .phase-card.p3::before { background: var(--amber); }
+  .phase-card.p4 { background: #FFF1F2; border: 1px solid #FECDD3; }
+  .phase-card.p4::before { background: var(--rose); }
+
+  .phase-card .phase-tag {
+    font-size: .65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    margin-bottom: .35rem;
+    display: block;
+  }
+  .p1 .phase-tag { color: var(--blue); }
+  .p2 .phase-tag { color: #065F46; }
+  .p3 .phase-tag { color: #92400E; }
+  .p4 .phase-tag { color: #9F1239; }
+
+  .phase-card h3 { font-size: .88rem; color: var(--navy); margin-bottom: .2rem; }
+  .phase-card .timeline-date { font-size: .75rem; color: var(--slate); margin-bottom: .6rem; }
+  .phase-card ul { padding-left: 1rem; margin-bottom: .6rem; }
+  .phase-card ul li { font-size: .75rem; color: var(--slate); margin-bottom: .2rem; }
+  .phase-card .kpi {
+    font-size: .72rem;
+    font-weight: 700;
+    padding: .3rem .6rem;
+    border-radius: 6px;
+    background: rgba(0,0,0,.06);
+    display: inline-block;
+  }
+
+  /* KPI grid */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: .6rem;
+    margin-bottom: 1.5rem;
+  }
+  .kpi-tile {
+    background: var(--navy);
+    border-radius: 10px;
+    padding: .9rem .85rem;
+    text-align: center;
+  }
+  .kpi-tile .kpi-val {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--teal);
+    display: block;
+    line-height: 1.1;
+  }
+  .kpi-tile .kpi-label { font-size: .68rem; color: rgba(255,255,255,.65); margin-top: .25rem; }
+
+  /* ────────────────────────────────────────────
+     PAGE 6 — CHALLENGES
+  ──────────────────────────────────────────── */
+  .challenge-list { display: flex; flex-direction: column; gap: .75rem; }
+  .challenge-item {
+    display: flex;
+    gap: 1rem;
+    background: var(--light);
+    border-radius: var(--radius);
+    padding: .9rem 1rem;
+    border: 1px solid var(--border);
+    border-left: 4px solid;
+  }
+  .challenge-item.high   { border-left-color: var(--rose); }
+  .challenge-item.medium { border-left-color: var(--amber); }
+  .challenge-item.low    { border-left-color: var(--teal); }
+
+  .challenge-icon {
+    font-size: 1.4rem;
+    flex-shrink: 0;
+    line-height: 1;
+    padding-top: .1rem;
+  }
+  .challenge-content { flex: 1; }
+  .challenge-content h3 { font-size: .88rem; margin-bottom: .25rem; color: var(--navy); }
+  .challenge-content p  { font-size: .78rem; color: var(--slate); margin: 0 0 .35rem; line-height: 1.5; }
+  .mitigation {
+    font-size: .72rem;
+    font-weight: 600;
+    color: #065F46;
+    background: #D1FAE5;
+    padding: .25rem .6rem;
+    border-radius: 6px;
+    display: inline-block;
+  }
+  .risk-label {
+    font-size: .65rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: .2rem .5rem;
+    border-radius: 4px;
+    float: right;
+    margin-left: .5rem;
+  }
+  .risk-high   { background: #FEE2E2; color: #991B1B; }
+  .risk-medium { background: #FEF3C7; color: #92400E; }
+  .risk-low    { background: var(--teal-lt); color: #0F766E; }
+
+  /* ────────────────────────────────────────────
+     PAGE 7 — CLOSING / SUMMARY
+  ──────────────────────────────────────────── */
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+  .summary-box {
+    border-radius: var(--radius);
+    padding: 1.2rem 1.3rem;
+    border: 1px solid var(--border);
+  }
+  .summary-box.navy { background: var(--navy); border-color: var(--navy); }
+  .summary-box .s-label {
+    font-size: .65rem;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    margin-bottom: .6rem;
+    display: block;
+  }
+  .summary-box.navy .s-label { color: var(--teal); }
+  .summary-box .s-label { color: var(--slate); }
+  .summary-box ul { padding-left: 1rem; }
+  .summary-box ul li { font-size: .82rem; margin-bottom: .3rem; color: var(--text); }
+  .summary-box.navy ul li { color: rgba(255,255,255,.85); }
+  .summary-box h3 { margin-bottom: .6rem; }
+  .summary-box.navy h3 { color: var(--white); }
+
+  /* Funding ask */
+  .funding-card {
+    background: linear-gradient(135deg, var(--navy), #1A4B8C);
+    border-radius: var(--radius);
+    padding: 1.4rem 1.6rem;
+    color: var(--white);
+    margin-bottom: 1.5rem;
+  }
+  .funding-card h3 { color: var(--teal); font-size: 1rem; margin-bottom: 1rem; }
+  .funding-bars { display: flex; gap: .75rem; align-items: flex-end; margin-bottom: 1rem; }
+  .fund-bar-wrap { flex: 1; text-align: center; }
+  .fund-bar {
+    border-radius: 6px 6px 0 0;
+    margin: 0 auto 4px;
+    width: 100%;
+    max-width: 56px;
+  }
+  .fund-bar-wrap .f-pct { font-size: .8rem; font-weight: 800; color: var(--white); }
+  .fund-bar-wrap .f-label { font-size: .65rem; color: rgba(255,255,255,.65); }
+  .fund-total { font-size: .85rem; color: rgba(255,255,255,.7); text-align: center; }
+  .fund-total strong { color: var(--teal); font-size: 1.1rem; }
+
+  /* Closing CTA */
+  .cta-row {
+    background: var(--teal);
+    border-radius: var(--radius);
+    padding: 1.2rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+  }
+  .cta-row p { color: var(--white); font-weight: 700; font-size: 1rem; margin: 0; }
+  .cta-row .cta-contact { font-size: .8rem; color: rgba(255,255,255,.8); text-align: right; }
+  .cta-row .cta-contact strong { color: var(--white); display: block; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════
+     PAGE 1  COVER
+═══════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="cover">
+    <span class="cover-eyebrow">Shareholder Product Brief &middot; May 2026</span>
+    <h1>Sleep<span>Sense</span><br/>Sleep Better,<br/>Live Better.</h1>
+    <p class="cover-sub">
+      An AI-powered mobile platform that turns your smartphone into a
+      clinical-grade sleep and snoring analyser — giving 1 billion
+      under-diagnosed people their first honest picture of their sleep health.
+    </p>
+    <div class="cover-pills">
+      <span class="pill">AI / ML</span>
+      <span class="pill">React Native</span>
+      <span class="pill">FastAPI Microservices</span>
+      <span class="pill">India-First</span>
+      <span class="pill">Privacy-First</span>
+      <span class="pill">Seed Stage</span>
+    </div>
+    <div class="cover-meta">
+      <div class="cover-meta-item">
+        <strong>Problem</strong>
+        Sleep disorders &amp; snoring analytics
+      </div>
+      <div class="cover-meta-item">
+        <strong>Market</strong>
+        ₹102B global sleep-tech by 2030
+      </div>
+      <div class="cover-meta-item">
+        <strong>Stage</strong>
+        Pre-seed · Documentation complete
+      </div>
+      <div class="cover-meta-item">
+        <strong>Ask</strong>
+        ₹50 Lakhs seed round
+      </div>
+    </div>
+
+    <!-- decorative SVG wave -->
+    <svg class="cover-wave" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M0 150 Q100 50 200 150 T400 150 V300 H0Z" fill="white"/>
+      <path d="M0 200 Q100 100 200 200 T400 200 V300 H0Z" fill="white" opacity=".5"/>
+    </svg>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     PAGE 2  THE PROBLEM
+═══════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="inner">
+    <div class="section-header">
+      <div class="section-num">1</div>
+      <div>
+        <span class="section-label">The Problem</span>
+        <h2>A Silent Health Crisis With No Affordable Solution</h2>
+      </div>
+    </div>
+
+    <!-- Big stats -->
+    <div class="stat-grid">
+      <div class="stat-card">
+        <span class="num">45%</span>
+        <span class="label">of adults snore regularly<br/><em>— American Academy of Sleep Medicine</em></span>
+      </div>
+      <div class="stat-card">
+        <span class="num">1B</span>
+        <span class="label">people have Obstructive Sleep Apnea worldwide<br/><em>— WHO</em></span>
+      </div>
+      <div class="stat-card">
+        <span class="num">~80%</span>
+        <span class="label">of moderate-to-severe OSA cases go undiagnosed<br/><em>— NIH</em></span>
+      </div>
+      <div class="stat-card">
+        <span class="num">₹32K Cr</span>
+        <span class="label">lost annually in India from sleep-disorder-related productivity loss<br/><em>— FICCI</em></span>
+      </div>
+    </div>
+
+    <!-- The gap -->
+    <div class="gap-box">
+      <span class="tag">The Gap</span>
+      <p>
+        Existing solutions force users to choose between a ₹15,000+ overnight sleep lab
+        or an app that is just a decibel meter. No affordable, AI-powered,
+        longitudinal sleep health tracker exists for the Indian market.
+      </p>
+    </div>
+
+    <!-- Spectrum of solutions -->
+    <div class="spectrum-wrap">
+      <h3>Where the Market Stands Today</h3>
+      <div class="spectrum"></div>
+      <div class="spec-pins">
+        <div class="spec-pin green">
+          <span class="name">SleepSense</span>
+          <span class="desc">AI · Affordable · Longitudinal</span>
+        </div>
+        <div class="spec-pin amber">
+          <div></div>
+          <span class="name">SnoreLab</span>
+          <span class="desc">Basic dB only · $5/mo · No ML</span>
+        </div>
+        <div class="spec-pin amber">
+          <span class="name">Sleep Cycle</span>
+          <span class="desc">Accelerometer · No snore focus</span>
+        </div>
+        <div class="spec-pin red">
+          <span class="name">Sleep Lab (PSG)</span>
+          <span class="desc">₹15,000+/night · Hospital only</span>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-bottom:1rem;">
+      The downstream cost is severe: undiagnosed OSA drives hypertension, Type 2 diabetes,
+      cardiovascular disease, and cognitive decline. The healthcare system bears the cost years later
+      — when a ₹0 app could have flagged the risk years earlier.
+    </p>
+
+    <div class="footer-strip">
+      <span>SleepSense · Shareholder Brief · May 2026</span>
+      <span>Slide 2 / 7</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     PAGE 3  WHY WE'RE BUILDING IT
+═══════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="inner">
+    <div class="section-header">
+      <div class="section-num">2</div>
+      <div>
+        <span class="section-label">Why We're Building It</span>
+        <h2>The Right Idea at the Right Moment</h2>
+      </div>
+    </div>
+
+    <div class="mission-quote">
+      <p>"Give every person on earth an honest picture of their sleep health,
+      delivered in their pocket, every morning."</p>
+      <span class="attr">— SleepSense Mission Statement</span>
+    </div>
+
+    <!-- Three forces -->
+    <div class="why-cards" style="margin-bottom:1.25rem;">
+      <div class="why-card">
+        <span class="icon">🧠</span>
+        <h3>ML Is Now Good Enough</h3>
+        <p>EfficientNet-class audio classifiers achieve &gt;92% accuracy on snore detection — something that was impossible with signal processing alone five years ago.</p>
+      </div>
+      <div class="why-card highlight">
+        <span class="icon">📱</span>
+        <h3>Smartphones Are the Hardware</h3>
+        <p>750 million Indian smartphone users already carry a microphone in their pocket. TFLite on-device inference means zero hardware cost for users.</p>
+      </div>
+      <div class="why-card">
+        <span class="icon">📈</span>
+        <h3>India Is Ready</h3>
+        <p>Post-COVID health consciousness, 17% CAGR sleep-tech market, and a middle class willing to pay for health apps — the demand is here.</p>
+      </div>
+    </div>
+
+    <!-- Competitive table -->
+    <h3 style="margin-bottom:.6rem;">Competitive Landscape</h3>
+    <table class="market-table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Platform</th>
+          <th>Price</th>
+          <th>AI Detection</th>
+          <th>Works Offline</th>
+          <th>India-Optimised</th>
+          <th>Longitudinal Trends</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>SnoreLab</td>
+          <td>iOS / Android</td>
+          <td>$5 / mo</td>
+          <td><span class="cross">✗ dB only</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="partial">~</span></td>
+        </tr>
+        <tr>
+          <td>Sleep Cycle</td>
+          <td>iOS / Android</td>
+          <td>$10 / mo</td>
+          <td><span class="partial">~ Accelerometer</span></td>
+          <td><span class="partial">~</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+        <tr>
+          <td>ResMed S+</td>
+          <td>iOS / Android</td>
+          <td>Free</td>
+          <td><span class="cross">✗ Sensor needed</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="cross">✗</span></td>
+          <td><span class="partial">~</span></td>
+        </tr>
+        <tr>
+          <td><strong>SleepSense</strong></td>
+          <td><strong>iOS + Android</strong></td>
+          <td><strong>Free / ₹99</strong></td>
+          <td><span class="check">✓ CNN-based</span></td>
+          <td><span class="check">✓ TFLite</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="check">✓</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="footer-strip">
+      <span>SleepSense · Shareholder Brief · May 2026</span>
+      <span>Slide 3 / 7</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     PAGE 4  HOW — PRODUCT & TECH
+═══════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="inner">
+    <div class="section-header">
+      <div class="section-num">3</div>
+      <div>
+        <span class="section-label">How We're Building It</span>
+        <h2>Product Architecture &amp; AI Engine</h2>
+      </div>
+    </div>
+
+    <!-- Data flow -->
+    <h3 style="margin-bottom:.65rem;">End-to-End Data Flow</h3>
+    <div class="flow" style="margin-bottom:1.25rem;">
+      <div class="flow-node">📱 Phone Mic<br/>(30s chunks)</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node blue">Audio Ingestion<br/>Service</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">S3<br/>Audio Store</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node amber">Kafka<br/>Event Bus</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node teal">ML Inference<br/>(CNN + XGBoost)</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node blue">Analytics<br/>Service</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">📊 Dashboard<br/>Report</div>
+    </div>
+
+    <!-- AI Models -->
+    <h3 style="margin-bottom:.6rem;">AI Model Stack</h3>
+    <table class="model-table" style="margin-bottom:1.25rem;">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Architecture</th>
+          <th>Task</th>
+          <th>Accuracy Target</th>
+          <th>Phase</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Snore Classifier</strong></td>
+          <td>EfficientNet-B0 (transfer from AudioSet)</td>
+          <td>4-class: snoring / breathing / silence / ambient</td>
+          <td>&gt;92% F1</td>
+          <td><span class="badge badge-teal">MVP</span></td>
+        </tr>
+        <tr>
+          <td><strong>Intensity Regressor</strong></td>
+          <td>XGBoost on 40 MFCCs + RMS energy</td>
+          <td>Snore intensity score 0–100</td>
+          <td>MAE &lt;5 pts</td>
+          <td><span class="badge badge-teal">MVP</span></td>
+        </tr>
+        <tr>
+          <td><strong>Sleep Stage Estimator</strong></td>
+          <td>BiLSTM + Attention (30s windows)</td>
+          <td>Awake / Light / Deep / REM</td>
+          <td>TBD</td>
+          <td><span class="badge badge-amber">Phase 2</span></td>
+        </tr>
+        <tr>
+          <td><strong>Apnea Risk Screener</strong></td>
+          <td>7-night session feature classifier</td>
+          <td>Low / Medium / High OSA risk</td>
+          <td>TBD</td>
+          <td><span class="badge badge-navy">Phase 2</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- MVP Features -->
+    <h3 style="margin-bottom:.65rem;">8 MVP Features — Shipping in 12 Weeks</h3>
+    <div class="feature-grid">
+      <div class="feature-tile">
+        <span class="f-num">F-01</span>
+        <h3>Sleep Recording</h3>
+        <p>Background mic capture in 30s chunks; battery-optimised; works with screen locked.</p>
+      </div>
+      <div class="feature-tile">
+        <span class="f-num">F-02</span>
+        <h3>AI Snore Detection</h3>
+        <p>CNN classifies every 3s window. Works offline via on-device TFLite model.</p>
+      </div>
+      <div class="feature-tile">
+        <span class="f-num">F-03</span>
+        <h3>Sleep Quality Score</h3>
+        <p>Single 0–100 score with grade (Excellent → Critical) and 7-day trend.</p>
+      </div>
+      <div class="feature-tile">
+        <span class="f-num">F-04</span>
+        <h3>Snoring Timeline</h3>
+        <p>5-min bucket chart. Tap any bar to hear the actual audio clip from that moment.</p>
+      </div>
+      <div class="feature-tile">
+        <span class="f-num">F-05</span>
+        <h3>History &amp; Trends</h3>
+        <p>Calendar heatmap, 7/30/90-day charts, streak tracking, CSV export for doctors.</p>
+      </div>
+      <div class="feature-tile">
+        <span class="f-num">F-06</span>
+        <h3>Personalised Insights</h3>
+        <p>2–3 evidence-based tips each morning. Rule engine + 20+ templates for MVP.</p>
+      </div>
+      <div class="feature-tile">
+        <span class="f-num">F-07</span>
+        <h3>Health Profile</h3>
+        <p>Lifestyle logs (alcohol, caffeine, exercise) correlated with snoring intensity.</p>
+      </div>
+      <div class="feature-tile">
+        <span class="f-num">F-08</span>
+        <h3>Reminders &amp; Goals</h3>
+        <p>Push reminders at bedtime, weekly sleep score goals, achievement badges.</p>
+      </div>
+    </div>
+
+    <div class="footer-strip">
+      <span>SleepSense · Shareholder Brief · May 2026</span>
+      <span>Slide 4 / 7</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     PAGE 5  ROADMAP & KPIS
+═══════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="inner">
+    <div class="section-header">
+      <div class="section-num">4</div>
+      <div>
+        <span class="section-label">Go-to-Market Roadmap</span>
+        <h2>4 Phases from MVP to Series A</h2>
+      </div>
+    </div>
+
+    <div class="roadmap" style="margin-bottom:1.5rem;">
+      <div class="phase-card p1">
+        <span class="phase-tag">Phase 1</span>
+        <h3>MVP</h3>
+        <div class="timeline-date">Months 1–3</div>
+        <ul>
+          <li>8 core features live</li>
+          <li>iOS &amp; Android launch</li>
+          <li>CNN model deployed (cloud)</li>
+          <li>TFLite on-device ready</li>
+          <li>Auth + session APIs</li>
+        </ul>
+        <span class="kpi">🎯 500 users · 4.0+ ★</span>
+      </div>
+      <div class="phase-card p2">
+        <span class="phase-tag">Phase 2</span>
+        <h3>Growth</h3>
+        <div class="timeline-date">Months 4–6</div>
+        <ul>
+          <li>Sleep stage estimator</li>
+          <li>Apnea risk screener</li>
+          <li>Lifestyle correlations</li>
+          <li>Web dashboard</li>
+          <li>Apple/Google social login</li>
+        </ul>
+        <span class="kpi">🎯 5,000 users · 20% W1 retention</span>
+      </div>
+      <div class="phase-card p3">
+        <span class="phase-tag">Phase 3</span>
+        <h3>Monetisation</h3>
+        <div class="timeline-date">Months 7–9</div>
+        <ul>
+          <li>₹99/month premium tier</li>
+          <li>PDF doctor-share reports</li>
+          <li>Apple Health / Google Fit</li>
+          <li>Advanced insights (LLM)</li>
+          <li>Referral programme</li>
+        </ul>
+        <span class="kpi">🎯 2% conversion → ₹49K MRR</span>
+      </div>
+      <div class="phase-card p4">
+        <span class="phase-tag">Phase 4</span>
+        <h3>Scale</h3>
+        <div class="timeline-date">Month 10+</div>
+        <ul>
+          <li>WatchOS / Fitbit SDK</li>
+          <li>B2B hospital partnerships</li>
+          <li>Research data platform</li>
+          <li>International expansion</li>
+        </ul>
+        <span class="kpi">🎯 Series A readiness</span>
+      </div>
+    </div>
+
+    <h3 style="margin-bottom:.75rem;">Key Performance Indicators — MVP Targets</h3>
+    <div class="kpi-grid">
+      <div class="kpi-tile">
+        <span class="kpi-val">&gt;30%</span>
+        <span class="kpi-label">DAU / MAU ratio</span>
+      </div>
+      <div class="kpi-tile">
+        <span class="kpi-val">&gt;4×</span>
+        <span class="kpi-label">Sessions per user / week</span>
+      </div>
+      <div class="kpi-tile">
+        <span class="kpi-val">92%+</span>
+        <span class="kpi-label">ML inference F1 score</span>
+      </div>
+      <div class="kpi-tile">
+        <span class="kpi-val">99.5%</span>
+        <span class="kpi-label">API uptime SLA</span>
+      </div>
+      <div class="kpi-tile">
+        <span class="kpi-val">&gt;80%</span>
+        <span class="kpi-label">Session completion rate</span>
+      </div>
+      <div class="kpi-tile">
+        <span class="kpi-val">&lt;3s</span>
+        <span class="kpi-label">ML inference per 30s chunk</span>
+      </div>
+      <div class="kpi-tile">
+        <span class="kpi-val">4.0+</span>
+        <span class="kpi-label">App Store rating</span>
+      </div>
+      <div class="kpi-tile">
+        <span class="kpi-val">NPS &gt;30</span>
+        <span class="kpi-label">Net Promoter Score</span>
+      </div>
+    </div>
+
+    <div class="footer-strip">
+      <span>SleepSense · Shareholder Brief · May 2026</span>
+      <span>Slide 5 / 7</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     PAGE 6  CHALLENGES
+═══════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="inner">
+    <div class="section-header">
+      <div class="section-num">5</div>
+      <div>
+        <span class="section-label">Risks &amp; Challenges</span>
+        <h2>What Stands Between Us and the Goal — And How We Address It</h2>
+      </div>
+    </div>
+
+    <div class="challenge-list">
+
+      <div class="challenge-item high">
+        <div class="challenge-icon">🗂️</div>
+        <div class="challenge-content">
+          <h3>Training Data Scarcity <span class="risk-label risk-high">High Risk</span></h3>
+          <p>Diverse labelled snoring audio from Indian users (varied devices, rooms, positions) does not exist at the scale we need. Public datasets like ESC-50 and AudioSet were not built for this use case.</p>
+          <span class="mitigation">Mitigation: Transfer learning on pre-trained AudioSet weights + aggressive augmentation + user-feedback loop to label edge cases over time.</span>
+        </div>
+      </div>
+
+      <div class="challenge-item high">
+        <div class="challenge-icon">🍎</div>
+        <div class="challenge-content">
+          <h3>iOS Background Audio Restrictions <span class="risk-label risk-high">High Risk</span></h3>
+          <p>Apple aggressively limits background processes. A recording session killed mid-night would destroy user trust immediately.</p>
+          <span class="mitigation">Mitigation: Use AVAudioSession continuous-recording pattern (proven by SnoreLab). Watchdog timer alerts user if interrupted.</span>
+        </div>
+      </div>
+
+      <div class="challenge-item medium">
+        <div class="challenge-icon">⚖️</div>
+        <div class="challenge-content">
+          <h3>Regulatory Exposure on Health Claims <span class="risk-label risk-medium">Medium Risk</span></h3>
+          <p>Saying "you may have sleep apnea" is a medical claim. Getting it wrong risks user harm, legal liability, and potential FDA/CE classification if we expand globally.</p>
+          <span class="mitigation">Mitigation: Apnea screener is out of scope for MVP. Phase 2 introduces it with "Not a medical diagnosis" disclaimer, reviewed by a sleep medicine consultant.</span>
+        </div>
+      </div>
+
+      <div class="challenge-item medium">
+        <div class="challenge-icon">📉</div>
+        <div class="challenge-content">
+          <h3>Post-First-Night User Churn <span class="risk-label risk-medium">Medium Risk</span></h3>
+          <p>Sleep apps face extreme early drop-off. Without longitudinal data, the product's core value (trends over time) is invisible, creating a retention paradox.</p>
+          <span class="mitigation">Mitigation: Bedtime reminders, streak tracking, and weekly email summaries are in MVP scope. Engagement (DAU/MAU &gt;30%) is a primary KPI from day one.</span>
+        </div>
+      </div>
+
+      <div class="challenge-item medium">
+        <div class="challenge-icon">📡</div>
+        <div class="challenge-content">
+          <h3>Microphone Variability Across Devices <span class="risk-label risk-medium">Medium Risk</span></h3>
+          <p>A ₹8,000 Android device mic is not the same as an iPhone 15 Pro. SNR and frequency response vary wildly across our target market's device mix.</p>
+          <span class="mitigation">Mitigation: Calibration step during onboarding (10s room-noise recording). Normalise to consistent loudness target before inference. Device metadata used as training feature.</span>
+        </div>
+      </div>
+
+      <div class="challenge-item low">
+        <div class="challenge-icon">☁️</div>
+        <div class="challenge-content">
+          <h3>Infrastructure Cost at Scale <span class="risk-label risk-low">Low Risk</span></h3>
+          <p>At 10,000 concurrent sessions, we process ~20,000 inference requests per minute. GPU time is not free, and miscalculating unit economics before pricing the subscription could compress margins.</p>
+          <span class="mitigation">Mitigation: Kafka smooths demand spikes. On-device TFLite offloads cost to user hardware. Profile cost-per-session before finalising subscription pricing.</span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="footer-strip">
+      <span>SleepSense · Shareholder Brief · May 2026</span>
+      <span>Slide 6 / 7</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     PAGE 7  CLOSING / ASK
+═══════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="inner">
+    <div class="section-header">
+      <div class="section-num">6</div>
+      <div>
+        <span class="section-label">Summary &amp; Investment Ask</span>
+        <h2>The Case for SleepSense</h2>
+      </div>
+    </div>
+
+    <div class="summary-grid" style="margin-bottom:1.25rem;">
+      <div class="summary-box navy">
+        <span class="s-label">Problem</span>
+        <h3>1 billion undiagnosed. Zero affordable solutions.</h3>
+        <ul>
+          <li>45% of adults snore regularly</li>
+          <li>80% of OSA goes undiagnosed</li>
+          <li>Clinical labs: ₹15,000+ per night</li>
+          <li>Existing apps: simple decibel meters</li>
+        </ul>
+      </div>
+      <div class="summary-box">
+        <span class="s-label">Our Answer</span>
+        <h3>Clinical-grade AI in every pocket</h3>
+        <ul>
+          <li>CNN classifier &gt;92% F1 on snore detection</li>
+          <li>Works offline — TFLite on-device</li>
+          <li>8 features. 12 weeks to launch.</li>
+          <li>₹99/month premium — 2% conversion = MRR</li>
+        </ul>
+      </div>
+      <div class="summary-box">
+        <span class="s-label">Why Us</span>
+        <h3>Right team, right timing, right market</h3>
+        <ul>
+          <li>AI/ML deep expertise (EfficientNet, XGBoost)</li>
+          <li>India-first: 750M smartphone users</li>
+          <li>₹102B global sleep-tech market by 2030</li>
+          <li>SnoreLab has no meaningful India presence</li>
+        </ul>
+      </div>
+      <div class="summary-box navy">
+        <span class="s-label">Risk Posture</span>
+        <h3>Known risks with clear mitigations</h3>
+        <ul>
+          <li>Data: transfer learning + feedback loops</li>
+          <li>iOS audio: proven AVAudioSession pattern</li>
+          <li>Regulation: apnea screener deferred to Phase 2</li>
+          <li>Churn: engagement features in MVP scope</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Funding card -->
+    <div class="funding-card">
+      <h3>Seed Round Ask — ₹50 Lakhs (≈ $60,000 USD)</h3>
+      <div class="funding-bars">
+        <div class="fund-bar-wrap">
+          <div class="fund-bar" style="background:#0D9488;height:64px;"></div>
+          <div class="f-pct">48%</div>
+          <div class="f-label">Development<br/>(2 devs × 6 mo)</div>
+        </div>
+        <div class="fund-bar-wrap">
+          <div class="fund-bar" style="background:#1A4B8C;height:27px;"></div>
+          <div class="f-pct">20%</div>
+          <div class="f-label">Marketing &amp;<br/>User Acquisition</div>
+        </div>
+        <div class="fund-bar-wrap">
+          <div class="fund-bar" style="background:#F59E0B;height:16px;"></div>
+          <div class="f-pct">12%</div>
+          <div class="f-label">Cloud<br/>Infrastructure</div>
+        </div>
+        <div class="fund-bar-wrap">
+          <div class="fund-bar" style="background:#8B5CF6;height:13px;"></div>
+          <div class="f-pct">10%</div>
+          <div class="f-label">ML Data<br/>Collection</div>
+        </div>
+        <div class="fund-bar-wrap">
+          <div class="fund-bar" style="background:#64748B;height:13px;"></div>
+          <div class="f-pct">10%</div>
+          <div class="f-label">Legal &amp;<br/>Compliance</div>
+        </div>
+      </div>
+      <p class="fund-total">
+        Expected at 6 months: <strong>5,000 users · 500 paying subscribers · ₹49,500 MRR</strong> · Clear path to Series A at 50,000 users
+      </p>
+    </div>
+
+    <div class="cta-row">
+      <p>Let's talk about building India's sleep health platform.</p>
+      <div class="cta-contact">
+        <strong>aman196agrawal@gmail.com</strong>
+        SleepSense · May 2026
+      </div>
+    </div>
+
+    <div class="footer-strip" style="border-top:none; padding-top:.5rem;">
+      <span>SleepSense · Shareholder Brief · May 2026</span>
+      <span>Slide 7 / 7</span>
+    </div>
+  </div>
+</div>
+
+<!-- Print hint -->
+<div class="no-print" style="text-align:center;padding:2rem;color:#64748B;font-size:.85rem;font-family:system-ui;">
+  <strong>To export as PDF:</strong> Press <kbd>Ctrl+P</kbd> (or <kbd>Cmd+P</kbd> on Mac) → set Destination to "Save as PDF" → Paper size A4 → Margins: None → Enable "Background graphics" → Save.
+</div>
+
+</body>
+</html>
