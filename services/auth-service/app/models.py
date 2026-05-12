@@ -1,7 +1,10 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
 from app.database import Base
+
+def _utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 def gen_uuid():
     return str(uuid.uuid4())
@@ -17,8 +20,8 @@ class User(Base):
     height_cm     = Column(String, nullable=True)
     timezone      = Column(String, default="Asia/Kolkata")
     is_active     = Column(Boolean, default=True)
-    created_at    = Column(DateTime, default=datetime.utcnow)
-    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at    = Column(DateTime, default=_utcnow)
+    updated_at    = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
@@ -28,4 +31,4 @@ class RefreshToken(Base):
     token      = Column(String, unique=True, nullable=False, index=True)
     expires_at = Column(DateTime, nullable=False)
     is_revoked = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)

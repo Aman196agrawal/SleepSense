@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -32,7 +32,7 @@ def _store_refresh_token(token: str, user_id: str, db: Session) -> None:
             id=str(uuid.uuid4()),
             user_id=user_id,
             token=token,
-            expires_at=datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+            expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
         )
         db.add(rt)
         db.commit()
@@ -52,7 +52,7 @@ def _consume_refresh_token(token: str, db: Session) -> str:
             RefreshToken.token == token,
             RefreshToken.is_revoked == False,
         ).first()
-        if not rt or rt.expires_at < datetime.utcnow():
+        if not rt or rt.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
             raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
         rt.is_revoked = True
         db.commit()

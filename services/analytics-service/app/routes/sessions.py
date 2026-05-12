@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -92,7 +92,7 @@ def start_session(user_id: str = Depends(get_current_user_id), db: Session = Dep
     session = SleepSession(
         id=str(uuid.uuid4()),
         user_id=user_id,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc).replace(tzinfo=None),
         status="recording",
     )
     db.add(session)
@@ -113,7 +113,7 @@ def end_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     duration = max(1, int((now - session.started_at).total_seconds() / 60))
 
     # ── Use real chunk data if it was uploaded ────────────────────────────────

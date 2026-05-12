@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -43,6 +43,7 @@ def log_lifestyle(
         exercise_minutes=body.exercise_minutes,
         stress_level=body.stress_level,
         sleep_aid_used=body.sleep_aid_used,
+        notes=body.notes,
     )
     db.add(log)
     db.commit()
@@ -56,7 +57,7 @@ def get_logs(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    since = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).strftime("%Y-%m-%d")
     logs = (
         db.query(LifestyleLog)
         .filter(LifestyleLog.user_id == user_id, LifestyleLog.logged_date >= since)
@@ -103,5 +104,6 @@ def _log_dict(log: LifestyleLog) -> dict:
         "exercise_minutes": log.exercise_minutes,
         "stress_level": log.stress_level,
         "sleep_aid_used": log.sleep_aid_used,
+        "notes": log.notes,
         "created_at": log.created_at.isoformat(),
     }

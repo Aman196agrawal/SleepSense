@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -45,7 +45,7 @@ def client():
 
 def make_access_token(user_id: str) -> str:
     """Create a valid SleepSense JWT for the given user_id."""
-    expire = datetime.utcnow() + timedelta(minutes=60)
+    expire = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=60)
     return jwt.encode(
         {"sub": user_id, "exp": expire, "type": "access"},
         settings.SECRET_KEY,

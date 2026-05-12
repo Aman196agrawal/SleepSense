@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -50,7 +50,7 @@ def get_trends(
 ):
     seed_user(user_id, db)
     days = {"7d": 7, "30d": 30, "90d": 90}.get(period, 30)
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
     sessions = (
         db.query(SleepSession)
@@ -104,7 +104,7 @@ def weekly_summary(
     db: Session = Depends(get_db),
 ):
     seed_user(user_id, db)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     week_start = now - timedelta(days=7)
 
     sessions = (

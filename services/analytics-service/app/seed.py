@@ -3,7 +3,7 @@ Generates 30 days of realistic mock sleep data for a new user.
 Called once per user on first analytics request.
 """
 import uuid, random, math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from app.models import SleepSession, TimelineBucket, SessionInsight, SeededUser
 
@@ -70,7 +70,7 @@ def seed_user(user_id: str, db: Session):
         return  # already seeded
 
     rng = random.Random(user_id)  # deterministic per user
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     for days_ago in range(30, 0, -1):
         if rng.random() < 0.18:  # ~18% nights skipped

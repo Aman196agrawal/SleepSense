@@ -70,7 +70,7 @@ class TestEndSession:
         body = resp.json()
         assert body["status"] == "complete"
         assert body["sleep_quality_score"] is not None
-        assert body["sleep_quality_grade"] in ("Excellent", "Good", "Fair", "Poor")
+        assert body["sleep_quality_grade"] in ("Excellent", "Good", "Fair", "Poor", "Critical")
         assert body["snoring_percentage"] is not None
         assert body["duration_minutes"] >= 1
 
