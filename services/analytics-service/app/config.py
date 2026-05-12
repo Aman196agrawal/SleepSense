@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    SECRET_KEY: str = "product-gem-dev-secret-key-32chars!!"
+    SECRET_KEY: str = "sleepsense-dev-secret-key-32chars!!"
     ALGORITHM: str = "HS256"
 
     # PostgreSQL (falls back to SQLite for bare local dev)

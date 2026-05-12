@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Product Gem",
-    "slug": "product-gem",
+    "name": "SleepSense",
+    "slug": "sleepsense",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -19,11 +19,11 @@
         "RECORD_AUDIO",
         "FOREGROUND_SERVICE"
       ],
-      "package": "com.anonymous.productgem"
+      "package": "com.anonymous.sleepsense"
     },
     "ios": {
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Product Gem needs microphone access to record your sleep audio."
+        "NSMicrophoneUsageDescription": "SleepSense needs microphone access to record your sleep audio."
       }
     }
   }

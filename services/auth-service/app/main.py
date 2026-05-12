@@ -5,7 +5,7 @@ from app.routes import auth, users
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Product Gem — Auth Service", version="1.0.0")
+app = FastAPI(title="SleepSense — Auth Service", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

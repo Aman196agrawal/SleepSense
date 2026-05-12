@@ -1,4 +1,4 @@
-package com.anonymous.productgem
+package com.anonymous.sleepsense
 
 import android.app.Application
 import android.content.res.Configuration

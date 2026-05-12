@@ -10,7 +10,7 @@ version: '3.9'
 # ─────────────────────────────────────────────────────────────────────────────
 
 x-common-env: &common-env
-  SECRET_KEY: ${SECRET_KEY:-product-gem-dev-secret-key-32chars!!}
+  SECRET_KEY: ${SECRET_KEY:-sleepsense-dev-secret-key-32chars!!}
 
 services:
 

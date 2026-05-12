@@ -1,11 +1,11 @@
 @echo off
-title Product Gem - Analytics Service (Port 8002)
+title SleepSense - Analytics Service (Port 8002)
 cd /d "C:\Users\BIT\OneDrive\Desktop\Nitu Chacha\SnoreLab\services\analytics-service"
 set DATABASE_URL=sqlite:///./data/analytics.db
-set SECRET_KEY=product-gem-dev-secret-key-32chars!!
+set SECRET_KEY=sleepsense-dev-secret-key-32chars!!
 echo.
 echo ================================================
-echo   Product Gem - Analytics Service
+echo   SleepSense - Analytics Service
 echo   Running on http://localhost:8002
 echo   API Docs: http://localhost:8002/docs
 echo ================================================

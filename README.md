@@ -1,6 +1,6 @@
-# Product Gem — Sample Build
+# SleepSense — Sample Build
 
-A full-stack running Android sample of the SleepSense product, renamed **Product Gem** for showcase.
+A full-stack running Android sample of the SleepSense sleep/snoring analytics platform.
 
 ## What's Running
 

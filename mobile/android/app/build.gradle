@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.anonymous.productgem'
+    namespace 'com.anonymous.sleepsense'
     defaultConfig {
-        applicationId 'com.anonymous.productgem'
+        applicationId 'com.anonymous.sleepsense'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
