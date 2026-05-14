@@ -200,6 +200,7 @@ def end_session(
     emit("session.ended", {
         "session_id":          session_id,
         "user_id":             user_id,
+        "status":              "complete",
         "sleep_quality_score": session.sleep_quality_score,
         "snoring_percentage":  session.snoring_percentage,
         "duration_minutes":    session.duration_minutes,

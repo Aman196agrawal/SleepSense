@@ -18,7 +18,7 @@ def get_current_user_id(
         user_id: str = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
-        if payload.get("type") not in ("access", None):
+        if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Wrong token type")
         return user_id
     except JWTError:

@@ -40,7 +40,7 @@ def aggregate(window_results: List[dict]) -> dict:
 
     snore_ratio   = round(len(snoring) / total, 3)
     avg_intensity = round(sum(r["intensity"] for r in snoring) / len(snoring), 1) if snoring else 0.0
-    max_intensity = round(max(r["intensity"] for r in window_results), 1)
+    max_intensity = round(max((r["intensity"] for r in window_results), default=0.0), 1)
 
     return {
         "snore_windows": len(snoring),

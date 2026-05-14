@@ -27,6 +27,7 @@ def emit(topic: str, payload: dict) -> None:
     if producer:
         try:
             producer.send(topic, payload)
+            producer.flush()
         except Exception as exc:
             _logger.warning("Kafka emit failed on %s: %s", topic, exc)
     else:
