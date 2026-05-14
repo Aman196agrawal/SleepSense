@@ -1,7 +1,10 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, Float, Integer, Boolean, DateTime, ForeignKey, JSON
 from app.database import Base
+
+def _utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 def gen_uuid():
     return str(uuid.uuid4())
@@ -26,7 +29,7 @@ class SleepSession(Base):
     total_chunks         = Column(Integer, default=0)
     processed_chunks     = Column(Integer, default=0)
     notes                = Column(String, nullable=True)
-    created_at           = Column(DateTime, default=datetime.utcnow)
+    created_at           = Column(DateTime, default=_utcnow)
 
 class TimelineBucket(Base):
     __tablename__ = "timeline_buckets"
@@ -50,7 +53,7 @@ class SessionInsight(Base):
     title        = Column(String, nullable=False)
     body         = Column(String, nullable=False)
     is_read      = Column(Boolean, default=False)
-    created_at   = Column(DateTime, default=datetime.utcnow)
+    created_at   = Column(DateTime, default=_utcnow)
 
 class LifestyleLog(Base):
     __tablename__ = "lifestyle_logs"
@@ -63,9 +66,10 @@ class LifestyleLog(Base):
     stress_level     = Column(Integer, default=3)
     caffeine_cups    = Column(Integer, default=0)
     sleep_aid_used   = Column(Boolean, default=False)
-    created_at       = Column(DateTime, default=datetime.utcnow)
+    notes            = Column(String, nullable=True)
+    created_at       = Column(DateTime, default=_utcnow)
 
 class SeededUser(Base):
     __tablename__ = "seeded_users"
     user_id    = Column(String, primary_key=True)
-    seeded_at  = Column(DateTime, default=datetime.utcnow)
+    seeded_at  = Column(DateTime, default=_utcnow)

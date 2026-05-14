@@ -1,13 +1,17 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import OnboardingScreen from '../screens/OnboardingScreen';
-import LoginScreen from '../screens/LoginScreen';
-import RegisterScreen from '../screens/RegisterScreen';
+import OnboardingScreen       from '../screens/OnboardingScreen';
+import LoginScreen            from '../screens/LoginScreen';
+import RegisterScreen         from '../screens/RegisterScreen';
+import ForgotPasswordScreen   from '../screens/ForgotPasswordScreen';
+import ResetPasswordScreen    from '../screens/ResetPasswordScreen';
 
 export type AuthStackParams = {
-  Onboarding: undefined;
-  Login: undefined;
-  Register: undefined;
+  Onboarding:     undefined;
+  Login:          undefined;
+  Register:       undefined;
+  ForgotPassword: undefined;
+  ResetPassword:  undefined;
 };
 
 const Stack = createNativeStackNavigator<AuthStackParams>();
@@ -15,9 +19,11 @@ const Stack = createNativeStackNavigator<AuthStackParams>();
 export default function AuthNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-      <Stack.Screen name="Login"      component={LoginScreen} />
-      <Stack.Screen name="Register"   component={RegisterScreen} />
+      <Stack.Screen name="Onboarding"     component={OnboardingScreen} />
+      <Stack.Screen name="Login"          component={LoginScreen} />
+      <Stack.Screen name="Register"       component={RegisterScreen} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen name="ResetPassword"  component={ResetPasswordScreen} />
     </Stack.Navigator>
   );
 }

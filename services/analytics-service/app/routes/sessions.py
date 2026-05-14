@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timezone
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -9,6 +9,7 @@ from app.security import get_current_user_id
 from app.seed import seed_user, _grade, _compute_score, _make_timeline, INSIGHT_TEMPLATES
 from app.influx_client import get_influx_write_api
 from app.kafka_client import emit
+from app.routes.ws import manager as ws_manager
 import random
 
 router = APIRouter()
@@ -29,6 +30,7 @@ class ChunkData(BaseModel):
 def upload_chunk(
     session_id: str,
     chunk: ChunkData,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
@@ -81,6 +83,15 @@ def upload_chunk(
         "snore_event_count":chunk.snore_event_count,
     })
 
+    # ── WebSocket: notify connected clients about the processed chunk ─────────
+    background_tasks.add_task(ws_manager.send_to_user, user_id, {
+        "event":          "chunk.analyzed",
+        "session_id":     session_id,
+        "chunk_index":    chunk.chunk_index,
+        "dominant_class": chunk.dominant_class,
+        "avg_intensity":  round(chunk.avg_intensity, 1),
+    })
+
     return {"status": "ok", "chunk_index": chunk.chunk_index}
 
 
@@ -92,7 +103,7 @@ def start_session(user_id: str = Depends(get_current_user_id), db: Session = Dep
     session = SleepSession(
         id=str(uuid.uuid4()),
         user_id=user_id,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc).replace(tzinfo=None),
         status="recording",
     )
     db.add(session)
@@ -104,6 +115,7 @@ def start_session(user_id: str = Depends(get_current_user_id), db: Session = Dep
 @router.post("/{session_id}/end")
 def end_session(
     session_id: str,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
@@ -113,7 +125,7 @@ def end_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     duration = max(1, int((now - session.started_at).total_seconds() / 60))
 
     # ── Use real chunk data if it was uploaded ────────────────────────────────
@@ -188,7 +200,18 @@ def end_session(
     emit("session.ended", {
         "session_id":          session_id,
         "user_id":             user_id,
+        "status":              "complete",
         "sleep_quality_score": session.sleep_quality_score,
+        "snoring_percentage":  session.snoring_percentage,
+        "duration_minutes":    session.duration_minutes,
+    })
+
+    # ── WebSocket: notify connected clients that session is complete ───────────
+    background_tasks.add_task(ws_manager.send_to_user, user_id, {
+        "event":               "session.complete",
+        "session_id":          session_id,
+        "sleep_quality_score": session.sleep_quality_score,
+        "sleep_quality_grade": session.sleep_quality_grade,
         "snoring_percentage":  session.snoring_percentage,
         "duration_minutes":    session.duration_minutes,
     })

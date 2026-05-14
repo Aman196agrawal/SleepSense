@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     SECRET_KEY: str = "sleepsense-dev-secret-key-32chars!!"
@@ -9,11 +9,15 @@ class Settings(BaseSettings):
     # PostgreSQL (falls back to SQLite for bare local dev)
     DATABASE_URL: str = "sqlite:////app/data/auth.db"
 
-    # Redis — if set, refresh tokens are stored here instead of PostgreSQL
+    # Redis — if set, refresh tokens and rate-limit counters are stored here
     REDIS_URL: str = ""
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    # Google OAuth2 — leave blank to skip audience validation in dev
+    GOOGLE_CLIENT_ID: str = ""
+
+    # Base URL used in password-reset emails
+    FRONTEND_URL: str = "http://localhost:3000"
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

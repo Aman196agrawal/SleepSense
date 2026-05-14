@@ -27,5 +27,6 @@ def emit(topic: str, payload: dict) -> None:
     if p:
         try:
             p.send(topic, payload)
+            p.flush()
         except Exception:
             pass

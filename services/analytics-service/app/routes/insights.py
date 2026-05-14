@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -74,7 +74,7 @@ def get_insights(
                 "title": pi["title"],
                 "body": pi["body"],
                 "is_read": False,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                 "source": "pattern",
             })
             seen.add(pi["title"])

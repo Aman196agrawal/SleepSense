@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.routes import sessions, analytics, insights, lifestyle
+from app.routes.ws import router as ws_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -19,6 +20,7 @@ app.include_router(sessions.router,   prefix="/sessions",  tags=["Sessions"])
 app.include_router(analytics.router,  prefix="/analytics", tags=["Analytics"])
 app.include_router(insights.router,   prefix="/insights",  tags=["Insights"])
 app.include_router(lifestyle.router,  prefix="/lifestyle", tags=["Lifestyle"])
+app.include_router(ws_router, tags=["WebSocket"])
 
 @app.get("/health")
 def health():

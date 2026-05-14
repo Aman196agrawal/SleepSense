@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
 import { useAuthStore } from '../store/authStore';
+import { useNavigation } from '@react-navigation/native';
 
 const MenuItem = ({ icon, label, value, onPress }: any) => (
   <TouchableOpacity style={styles.menuItem} onPress={onPress}>
@@ -22,6 +23,7 @@ const MenuItem = ({ icon, label, value, onPress }: any) => (
 
 export default function ProfileScreen() {
   const { user, logout } = useAuthStore();
+  const navigation = useNavigation<any>();
 
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -59,9 +61,9 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Sleep Preferences</Text>
+          <Text style={styles.sectionTitle}>Health & Preferences</Text>
           <View style={styles.card}>
-            <MenuItem icon="bed-outline"        label="Sleep Position"   value="Side"        onPress={() => {}} />
+            <MenuItem icon="fitness-outline"    label="Health Profile"   value="Edit"        onPress={() => navigation.navigate('HealthProfile')} />
             <View style={styles.divider} />
             <MenuItem icon="notifications-outline" label="Bedtime Reminder" value="10:30 PM" onPress={() => {}} />
             <View style={styles.divider} />

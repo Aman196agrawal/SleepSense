@@ -1,23 +1,57 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 import { Colors } from '../theme/colors';
 import { useAuthStore } from '../store/authStore';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParams } from '../navigation/AuthNavigator';
+
+WebBrowser.maybeCompleteAuthSession();
 
 type Props = { navigation: NativeStackNavigationProp<AuthStackParams, 'Login'> };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginScreen({ navigation }: Props) {
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading]   = useState(false);
-  const [showPw, setShowPw]     = useState(false);
-  const [errors, setErrors]     = useState<{ email?: string; password?: string; form?: string }>({});
-  const { login }               = useAuthStore();
+  const [email, setEmail]             = useState('');
+  const [password, setPassword]       = useState('');
+  const [loading, setLoading]         = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [showPw, setShowPw]           = useState(false);
+  const [errors, setErrors]           = useState<{ email?: string; password?: string; form?: string }>({});
+  const { login, socialLoginGoogle }  = useAuthStore();
+
+  const [, response, promptAsync] = Google.useAuthRequest({
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId:     process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    webClientId:     process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  });
+
+  useEffect(() => {
+    if (!response) return;
+    if (response.type === 'success') {
+      const idToken = response.authentication?.idToken;
+      if (!idToken) {
+        setErrors({ form: 'Google did not return an ID token. Ensure a webClientId is configured.' });
+        return;
+      }
+      setGoogleLoading(true);
+      socialLoginGoogle(idToken)
+        .catch((e: any) => {
+          const detail = e?.response?.data?.detail ?? 'Google sign-in failed. Please try again.';
+          setErrors({ form: detail });
+        })
+        .finally(() => setGoogleLoading(false));
+    } else if (response.type === 'error') {
+      setErrors({ form: response.error?.message ?? 'Google sign-in was cancelled or failed.' });
+    }
+  }, [response]);
 
   const clearErr = (key: keyof typeof errors) =>
     setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
@@ -38,10 +72,32 @@ export default function LoginScreen({ navigation }: Props) {
     try {
       await login(email.trim().toLowerCase(), password);
     } catch (e: any) {
-      setErrors({ form: e?.response?.data?.detail ?? 'Invalid email or password' });
+      const detail = e?.response?.data?.detail ?? '';
+      if (e?.response?.status === 429) {
+        setErrors({ form: 'Too many login attempts. Please try again in 15 minutes.' });
+      } else {
+        setErrors({ form: detail || 'Invalid email or password' });
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoogleSignIn = async () => {
+    const hasConfig =
+      process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+      process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ||
+      process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+
+    if (!hasConfig) {
+      Alert.alert(
+        'Google Sign-In Not Configured',
+        'Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (and platform IDs) in your .env file to enable Google login.',
+      );
+      return;
+    }
+    setErrors({});
+    await promptAsync();
   };
 
   return (
@@ -96,14 +152,37 @@ export default function LoginScreen({ navigation }: Props) {
             </View>
             {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
 
-            <TouchableOpacity style={styles.forgotRow} onPress={() => {}}>
+            <TouchableOpacity style={styles.forgotRow} onPress={() => navigation.navigate('ForgotPassword')}>
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.btn} onPress={handleLogin} disabled={loading}>
+            <TouchableOpacity style={styles.btn} onPress={handleLogin} disabled={loading || googleLoading}>
               <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.btnInner}>
                 <Text style={styles.btnText}>{loading ? 'Signing in…' : 'Sign In'}</Text>
               </LinearGradient>
+            </TouchableOpacity>
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.googleBtn, googleLoading && { opacity: 0.6 }]}
+              onPress={handleGoogleSignIn}
+              disabled={loading || googleLoading}
+            >
+              {googleLoading ? (
+                <ActivityIndicator size="small" color={Colors.primary} />
+              ) : (
+                <View style={styles.googleIconWrap}>
+                  <Text style={styles.googleG}>G</Text>
+                </View>
+              )}
+              <Text style={styles.googleText}>
+                {googleLoading ? 'Signing in…' : 'Continue with Google'}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => navigation.navigate('Register')} style={styles.switchRow}>
@@ -136,6 +215,13 @@ const styles = StyleSheet.create({
   btn:           { borderRadius: 12, overflow: 'hidden', marginTop: 24 },
   btnInner:      { paddingVertical: 15, alignItems: 'center' },
   btnText:       { color: '#fff', fontWeight: '700', fontSize: 16 },
+  dividerRow:    { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 20 },
+  dividerLine:   { flex: 1, height: 1, backgroundColor: Colors.border },
+  dividerText:   { color: Colors.textMuted, fontSize: 13 },
+  googleBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, paddingVertical: 13, backgroundColor: Colors.bg },
+  googleIconWrap:{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  googleG:       { color: '#4285F4', fontWeight: '800', fontSize: 14 },
+  googleText:    { color: Colors.text, fontWeight: '600', fontSize: 15 },
   switchRow:     { flexDirection: 'row', justifyContent: 'center', marginTop: 20 },
   switchText:    { color: Colors.textSub, fontSize: 14 },
 });
