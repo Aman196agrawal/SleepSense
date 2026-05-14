@@ -10,6 +10,7 @@ import HistoryScreen       from '../screens/HistoryScreen';
 import ProfileScreen       from '../screens/ProfileScreen';
 import SessionDetailScreen from '../screens/SessionDetailScreen';
 import LifestyleLogScreen  from '../screens/LifestyleLogScreen';
+import HealthProfileScreen from '../screens/HealthProfileScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -28,6 +29,15 @@ function HistoryStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HistoryMain"   component={HistoryScreen} />
       <Stack.Screen name="SessionDetail" component={SessionDetailScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function ProfileStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="ProfileMain"    component={ProfileScreen} />
+      <Stack.Screen name="HealthProfile"  component={HealthProfileScreen} />
     </Stack.Navigator>
   );
 }
@@ -65,7 +75,7 @@ export default function MainNavigator() {
       <Tab.Screen name="Record"  component={RecordScreen} />
       <Tab.Screen name="Log"     component={LifestyleLogScreen} options={{ title: 'Log' }} />
       <Tab.Screen name="History" component={HistoryStack} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Profile" component={ProfileStack} />
     </Tab.Navigator>
   );
 }

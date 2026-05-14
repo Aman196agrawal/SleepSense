@@ -14,6 +14,7 @@ _GOOGLE_INFO = {
     "sub": "google-uid-12345",
     "email": "googleuser@gmail.com",
     "name": "Google User",
+    "email_verified": "true",
 }
 
 
@@ -76,6 +77,35 @@ class TestSocialGoogle:
     def test_missing_id_token_returns_422(self, client):
         resp = client.post("/auth/social/google", json={})
         assert resp.status_code == 422
+
+    def test_unverified_email_returns_401(self, client):
+        with patch("app.routes.auth._verify_google_token") as mock:
+            mock.return_value = {**_GOOGLE_INFO, "email_verified": "false"}
+            resp = client.post("/auth/social/google", json={"id_token": "fake-token"})
+        assert resp.status_code == 401
+        assert "verified" in resp.json()["detail"].lower()
+
+    def test_unverified_email_bool_false_returns_401(self, client):
+        with patch("app.routes.auth._verify_google_token") as mock:
+            mock.return_value = {**_GOOGLE_INFO, "email_verified": False}
+            resp = client.post("/auth/social/google", json={"id_token": "fake-token"})
+        assert resp.status_code == 401
+
+    def test_orphaned_social_account_returns_401(self, client, db_session):
+        from app.models import SocialAccount
+        orphan = SocialAccount(
+            user_id="non-existent-user-id",
+            provider="google",
+            provider_uid="orphan-uid-999",
+        )
+        db_session.add(orphan)
+        db_session.commit()
+
+        with patch("app.routes.auth._verify_google_token") as mock:
+            mock.return_value = {**_GOOGLE_INFO, "sub": "orphan-uid-999"}
+            resp = client.post("/auth/social/google", json={"id_token": "fake-token"})
+        assert resp.status_code == 401
+        assert "no longer exists" in resp.json()["detail"]
 
 
 # ── /auth/forgot-password ──────────────────────────────────────────────────────

@@ -25,6 +25,9 @@
       "infoPlist": {
         "NSMicrophoneUsageDescription": "SleepSense needs microphone access to record your sleep audio."
       }
-    }
+    },
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }

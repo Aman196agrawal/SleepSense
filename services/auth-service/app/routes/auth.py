@@ -195,6 +195,9 @@ def logout(body: RefreshRequest, db: Session = Depends(get_db)):
 def social_google(body: SocialLoginRequest, db: Session = Depends(get_db)):
     info = _verify_google_token(body.id_token)
 
+    if not info.get("email_verified") in (True, "true"):
+        raise HTTPException(status_code=401, detail="Google email not verified")
+
     google_uid   = info.get("sub", "")
     email        = info.get("email", "")
     display_name = info.get("name", "")
@@ -209,6 +212,8 @@ def social_google(body: SocialLoginRequest, db: Session = Depends(get_db)):
 
     if social:
         user = db.query(User).filter(User.id == social.user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Associated account no longer exists")
     else:
         user = db.query(User).filter(User.email == email).first()
         if not user:

@@ -11,6 +11,9 @@ interface AuthState {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
+  socialLoginGoogle: (id_token: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (token: string, new_password: string) => Promise<void>;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
 }
@@ -50,6 +53,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await AsyncStorage.multiSet([['access_token', access_token], ['refresh_token', refresh_token]]);
     const me = await AuthAPI.getMe();
     set({ user: me.data, accessToken: access_token, refreshToken: refresh_token });
+  },
+
+  socialLoginGoogle: async (id_token) => {
+    const res = await AuthAPI.socialLoginGoogle(id_token);
+    const { access_token, refresh_token } = res.data;
+    await AsyncStorage.multiSet([['access_token', access_token], ['refresh_token', refresh_token]]);
+    const me = await AuthAPI.getMe();
+    set({ user: me.data, accessToken: access_token, refreshToken: refresh_token });
+  },
+
+  forgotPassword: async (email) => {
+    await AuthAPI.forgotPassword(email);
+  },
+
+  resetPassword: async (token, new_password) => {
+    await AuthAPI.resetPassword(token, new_password);
   },
 
   logout: async () => {

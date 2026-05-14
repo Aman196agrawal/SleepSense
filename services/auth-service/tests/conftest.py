@@ -47,6 +47,15 @@ def client():
 
 
 @pytest.fixture
+def db_session():
+    db = TestingSession()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@pytest.fixture
 def registered_user(client):
     """Register a user and return the response payload."""
     resp = client.post("/auth/register", json={
