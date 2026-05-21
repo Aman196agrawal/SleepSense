@@ -9,9 +9,11 @@ import MainNavigator from './src/navigation/MainNavigator';
 import { Colors } from './src/theme/colors';
 
 export default function App() {
-  const { user, isLoading, hydrate } = useAuthStore();
+  const user      = useAuthStore(s => s.user);
+  const isLoading = useAuthStore(s => s.isLoading);
+  const hydrate   = useAuthStore(s => s.hydrate);
 
-  useEffect(() => { hydrate(); }, []);
+  useEffect(() => { hydrate(); }, [hydrate]);
 
   return (
     <SafeAreaProvider>

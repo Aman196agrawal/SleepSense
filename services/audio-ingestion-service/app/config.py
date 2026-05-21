@@ -3,7 +3,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./data/ingestion.db"
-    SECRET_KEY: str = "dev-secret-key-change-in-production"
+    # Required — service crashes at startup if not provided (no hard-coded fallback).
+    SECRET_KEY: str
 
     # S3 / MinIO
     S3_BUCKET: str = "sleepsense-audio-dev"

@@ -24,8 +24,8 @@ class UserResponse(BaseModel):
     id: str
     email: str
     display_name: Optional[str]
-    weight_kg: Optional[str]
-    height_cm: Optional[str]
+    weight_kg: Optional[float]
+    height_cm: Optional[float]
     timezone: str
     created_at: datetime
 
@@ -33,8 +33,8 @@ class UserResponse(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     display_name: Optional[str] = None
-    weight_kg: Optional[str] = None
-    height_cm: Optional[str] = None
+    weight_kg: Optional[float] = Field(default=None, ge=0, le=500)
+    height_cm: Optional[float] = Field(default=None, ge=0, le=300)
     timezone: Optional[str] = None
 
 class HealthProfileRequest(BaseModel):

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import SessionInsight, SleepSession, LifestyleLog
@@ -94,7 +94,9 @@ def mark_read(
         SessionInsight.id == insight_id,
         SessionInsight.user_id == user_id,
     ).first()
-    if insight:
-        insight.is_read = True
-        db.commit()
+    if not insight:
+        raise HTTPException(status_code=404, detail="Insight not found")
+
+    insight.is_read = True
+    db.commit()
     return {"id": insight_id, "is_read": True}

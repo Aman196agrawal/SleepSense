@@ -16,8 +16,8 @@ const slides = [
   },
   {
     icon: 'analytics',
-    title: 'AI-Powered Insights',
-    body: 'Our CNN model classifies every sound — snoring, breathing, silence — and gives you a real Sleep Quality Score each morning.',
+    title: 'Smart Sound Detection',
+    body: 'Loudness-based detection tags each segment as snoring, breathing or silence and computes a Sleep Quality Score (0–100) each morning. CNN-based classification is coming in a future release.',
   },
   {
     icon: 'sunny',

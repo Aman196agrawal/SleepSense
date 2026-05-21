@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Boolean, DateTime, Integer, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, Integer, Float, ForeignKey
 from app.database import Base
 
 def _utcnow():
@@ -16,8 +16,8 @@ class User(Base):
     email         = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=True)
     display_name  = Column(String, nullable=True)
-    weight_kg     = Column(String, nullable=True)
-    height_cm     = Column(String, nullable=True)
+    weight_kg     = Column(Float, nullable=True)
+    height_cm     = Column(Float, nullable=True)
     timezone      = Column(String, default="Asia/Kolkata")
     is_active     = Column(Boolean, default=True)
     created_at    = Column(DateTime, default=_utcnow)

@@ -51,6 +51,12 @@ Thumbs.db
 *.log
 logs/
 
+# SQLite dev databases (contain hashed passwords, refresh tokens, seeded data)
+services/*/data/*.db
+services/*/data/*.db-journal
+services/*/data/*.db-wal
+services/*/data/*.db-shm
+
 # ML artifacts
 *.pt
 *.pth

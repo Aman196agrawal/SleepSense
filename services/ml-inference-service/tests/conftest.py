@@ -1,4 +1,9 @@
 """Shared fixtures for the ML inference service test suite."""
+import os
+
+# Required env vars must be set before app.config is imported anywhere.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-prod-32chars")
+
 import io
 import wave
 

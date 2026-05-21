@@ -1,5 +1,3 @@
-version: '3.9'
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Local development stack — mirrors the production architecture:
 #   PostgreSQL  → primary relational store
@@ -7,10 +5,16 @@ version: '3.9'
 #   Kafka       → async event bus (chunk.uploaded → ML inference)
 #   InfluxDB    → per-chunk snore event time-series
 #   MinIO       → S3-compatible object store for audio files
+#
+# Required env vars (defined in your .env, no defaults in this file):
+#   SECRET_KEY        — JWT signing secret, must match across services
+#   INFLUXDB_TOKEN    — Influx admin token (used by influxdb + analytics)
 # ─────────────────────────────────────────────────────────────────────────────
 
 x-common-env: &common-env
-  SECRET_KEY: ${SECRET_KEY:-sleepsense-dev-secret-key-32chars!!}
+  # No default — Compose will fail loudly if SECRET_KEY is missing from .env.
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required in .env (>=32 random chars)}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8081,http://localhost:19006,http://localhost:3000}
 
 services:
 
@@ -104,7 +108,7 @@ services:
       DOCKER_INFLUXDB_INIT_ORG: sleepsense
       DOCKER_INFLUXDB_INIT_BUCKET: snore_events
       DOCKER_INFLUXDB_INIT_RETENTION: 0
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: dev-influxdb-token-sleepsense-2024
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:?INFLUXDB_TOKEN is required in .env}
     volumes:
       - influxdb_data:/var/lib/influxdb2
     healthcheck:
@@ -183,9 +187,10 @@ services:
       DATABASE_URL: postgresql://postgres:devpassword@postgres:5432/sleepsense
       REDIS_URL: redis://redis:6379
       INFLUXDB_URL: http://influxdb:8086
-      INFLUXDB_TOKEN: dev-influxdb-token-sleepsense-2024
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:?INFLUXDB_TOKEN is required in .env}
       INFLUXDB_ORG: sleepsense
       INFLUXDB_BUCKET: snore_events
+      AUTH_SERVICE_URL: http://auth-service:8001
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -201,6 +206,14 @@ services:
       influxdb:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      # Wait for the topic / bucket init jobs so the service doesn't race
+      # against unprovisioned infra on first boot.
+      kafka-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      auth-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]

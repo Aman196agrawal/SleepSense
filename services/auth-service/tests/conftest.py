@@ -1,3 +1,8 @@
+import os
+
+# Required env vars must be set before app.config is imported anywhere.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-prod-32chars")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

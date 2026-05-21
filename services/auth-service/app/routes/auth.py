@@ -28,55 +28,69 @@ _logger = logging.getLogger(__name__)
 
 # ── Refresh token helpers ──────────────────────────────────────────────────────
 
+def _store_in_db(token: str, user_id: str, db: Session) -> None:
+    rt = RefreshToken(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        token=token,
+        expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
+                   + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    )
+    db.add(rt)
+    db.commit()
+
+
 def _store_refresh_token(token: str, user_id: str, db: Session) -> None:
     r = get_redis()
     if r:
-        r.setex(
-            f"rt:{token}",
-            settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-            user_id,
-        )
-    else:
-        rt = RefreshToken(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            token=token,
-            expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-        )
-        db.add(rt)
-        db.commit()
+        try:
+            r.setex(f"rt:{token}", settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400, user_id)
+            return
+        except Exception:
+            _logger.warning("Redis store failed — falling back to DB", exc_info=True)
+    _store_in_db(token, user_id, db)
+
+
+def _consume_from_db(token: str, db: Session) -> str:
+    rt = db.query(RefreshToken).filter(
+        RefreshToken.token == token,
+        RefreshToken.is_revoked == False,
+    ).first()
+    if not rt or rt.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
+        raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
+    rt.is_revoked = True
+    db.commit()
+    return rt.user_id
 
 
 def _consume_refresh_token(token: str, db: Session) -> str:
     """Validate + rotate: returns user_id or raises 401."""
     r = get_redis()
     if r:
-        user_id = r.get(f"rt:{token}")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
-        r.delete(f"rt:{token}")
-        return user_id
-    else:
-        rt = db.query(RefreshToken).filter(
-            RefreshToken.token == token,
-            RefreshToken.is_revoked == False,
-        ).first()
-        if not rt or rt.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
-            raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
-        rt.is_revoked = True
-        db.commit()
-        return rt.user_id
+        try:
+            user_id = r.get(f"rt:{token}")
+            if user_id:
+                r.delete(f"rt:{token}")
+                return user_id
+            # Redis is up but the token isn't there — could be expired/revoked,
+            # or could have been written before Redis was wired up. Fall back
+            # to DB to be safe rather than 401-ing valid tokens.
+        except Exception:
+            _logger.warning("Redis consume failed — falling back to DB", exc_info=True)
+    return _consume_from_db(token, db)
 
 
 def _revoke_refresh_token(token: str, db: Session) -> None:
     r = get_redis()
     if r:
-        r.delete(f"rt:{token}")
-    else:
-        rt = db.query(RefreshToken).filter(RefreshToken.token == token).first()
-        if rt:
-            rt.is_revoked = True
-            db.commit()
+        try:
+            r.delete(f"rt:{token}")
+        except Exception:
+            _logger.warning("Redis revoke failed — falling through to DB", exc_info=True)
+    rt = db.query(RefreshToken).filter(RefreshToken.token == token).first()
+    if rt and not rt.is_revoked:
+        rt.is_revoked = True
+        db.commit()
 
 
 # ── Rate limiting (sliding window, 10 req / 15 min per IP) ───────────────────
@@ -87,20 +101,26 @@ _rl_store: dict[str, list[float]] = {}  # ip → list of request timestamps (in-
 def _check_rate_limit(ip: str) -> None:
     r = get_redis()
     if r:
-        key = f"ratelimit:login:{ip}"
-        count = r.incr(key)
-        if count == 1:
-            r.expire(key, 900)  # 15 minutes
-        if count > 10:
-            raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
-    else:
-        now = time.time()
-        window = 900.0
-        timestamps = [t for t in _rl_store.get(ip, []) if now - t < window]
-        timestamps.append(now)
-        _rl_store[ip] = timestamps
-        if len(timestamps) > 10:
-            raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+        try:
+            key = f"ratelimit:login:{ip}"
+            count = r.incr(key)
+            if count == 1:
+                r.expire(key, 900)  # 15 minutes
+            if count > 10:
+                raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+            return
+        except HTTPException:
+            raise
+        except Exception:
+            _logger.warning("Redis rate-limit check failed — falling back to in-memory", exc_info=True)
+
+    now = time.time()
+    window = 900.0
+    timestamps = [t for t in _rl_store.get(ip, []) if now - t < window]
+    timestamps.append(now)
+    _rl_store[ip] = timestamps
+    if len(timestamps) > 10:
+        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
 
 
 # ── Google OAuth2 token verification ──────────────────────────────────────────

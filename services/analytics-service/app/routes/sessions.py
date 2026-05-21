@@ -1,18 +1,44 @@
+import logging
+import random
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
+
 from app.database import get_db
-from app.models import SleepSession, TimelineBucket, SessionInsight
-from app.security import get_current_user_id
-from app.seed import seed_user, _grade, _compute_score, _make_timeline, INSIGHT_TEMPLATES
 from app.influx_client import get_influx_write_api
 from app.kafka_client import emit
+from app.models import SleepSession, TimelineBucket, SessionInsight
 from app.routes.ws import manager as ws_manager
-import random
+from app.scoring import INSIGHT_TEMPLATES, compute_score, grade, make_timeline
+from app.security import get_current_user_id
+from app.seed import seed_user
 
 router = APIRouter()
+_logger = logging.getLogger(__name__)
+
+
+class SessionResponse(BaseModel):
+    id: str
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    duration_minutes: Optional[int] = None
+    status: str
+    sleep_quality_score: Optional[float] = None
+    sleep_quality_grade: Optional[str] = None
+    snoring_duration_min: Optional[int] = None
+    snoring_percentage: Optional[float] = None
+    snore_events_per_hour: Optional[float] = None
+    avg_snore_intensity: Optional[float] = None
+    max_snore_intensity: Optional[float] = None
+    peak_snoring_hour: Optional[int] = None
+    total_chunks: Optional[int] = None
+    processed_chunks: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 def _ensure_seeded(user_id: str, db: Session):
     seed_user(user_id, db)
@@ -71,7 +97,11 @@ def upload_chunk(
             )
             write_api.write(bucket=_s.INFLUXDB_BUCKET, org=_s.INFLUXDB_ORG, record=point)
         except Exception:
-            pass  # best-effort — never block the response
+            # best-effort — never block the response, but leave a breadcrumb
+            _logger.warning(
+                "influxdb write failed for session=%s chunk=%s",
+                session_id, chunk.chunk_index, exc_info=True,
+            )
 
     # ── Kafka: emit audio.chunk.uploaded for ML inference pipeline ────────────
     emit("audio.chunk.uploaded", {
@@ -112,7 +142,7 @@ def start_session(user_id: str = Depends(get_current_user_id), db: Session = Dep
     return {"session_id": session.id, "status": session.status, "started_at": session.started_at}
 
 
-@router.post("/{session_id}/end")
+@router.post("/{session_id}/end", response_model=SessionResponse)
 def end_session(
     session_id: str,
     background_tasks: BackgroundTasks,
@@ -161,16 +191,16 @@ def end_session(
         interruptions = rng.randint(2, 10)
         peak_hour     = rng.randint(0, 3)
 
-        for b in _make_timeline(session_id, max(duration, 30), snore_ratio, rng):
+        for b in make_timeline(session_id, max(duration, 30), snore_ratio, rng):
             db.add(b)
 
-    score = _compute_score(snore_ratio, avg_int, interruptions, duration)
+    score = compute_score(snore_ratio, avg_int, interruptions, duration)
 
     session.ended_at              = now
     session.duration_minutes      = duration
     session.status                = "complete"
     session.sleep_quality_score   = score
-    session.sleep_quality_grade   = _grade(score)
+    session.sleep_quality_grade   = grade(score)
     session.snoring_duration_min  = int(duration * snore_ratio)
     session.snoring_percentage    = round(snore_ratio * 100, 1)
     session.snore_events_per_hour = round(interruptions / max(duration / 60, 0.1), 1)
@@ -216,10 +246,10 @@ def end_session(
         "duration_minutes":    session.duration_minutes,
     })
 
-    return _session_dict(session)
+    return session
 
 
-@router.get("")
+@router.get("", response_model=list[SessionResponse])
 def list_sessions(
     limit: int = 20,
     user_id: str = Depends(get_current_user_id),
@@ -233,10 +263,10 @@ def list_sessions(
         .limit(limit)
         .all()
     )
-    return [_session_dict(s) for s in sessions]
+    return sessions
 
 
-@router.get("/{session_id}")
+@router.get("/{session_id}", response_model=SessionResponse)
 def get_session(
     session_id: str,
     user_id: str = Depends(get_current_user_id),
@@ -247,24 +277,4 @@ def get_session(
     ).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return _session_dict(session)
-
-
-def _session_dict(s: SleepSession) -> dict:
-    return {
-        "id": s.id,
-        "started_at":           s.started_at.isoformat() if s.started_at else None,
-        "ended_at":             s.ended_at.isoformat()   if s.ended_at   else None,
-        "duration_minutes":     s.duration_minutes,
-        "status":               s.status,
-        "sleep_quality_score":  s.sleep_quality_score,
-        "sleep_quality_grade":  s.sleep_quality_grade,
-        "snoring_duration_min": s.snoring_duration_min,
-        "snoring_percentage":   s.snoring_percentage,
-        "snore_events_per_hour":s.snore_events_per_hour,
-        "avg_snore_intensity":  s.avg_snore_intensity,
-        "max_snore_intensity":  s.max_snore_intensity,
-        "peak_snoring_hour":    s.peak_snoring_hour,
-        "total_chunks":         s.total_chunks,
-        "processed_chunks":     s.processed_chunks,
-    }
+    return session

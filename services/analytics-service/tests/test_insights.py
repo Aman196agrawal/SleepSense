@@ -75,10 +75,10 @@ class TestMarkInsightRead:
         assert resp.status_code == 200
         assert resp.json()["is_read"] is True
 
-    def test_mark_nonexistent_insight_still_returns_200(self, client, headers_a):
-        # Mark-as-read is idempotent — unknown IDs should not crash
+    def test_mark_nonexistent_insight_returns_404(self, client, headers_a):
+        # Unknown / unowned insight IDs should 404 rather than silently lying.
         resp = client.patch("/insights/nonexistent-id/read", headers=headers_a)
-        assert resp.status_code == 200
+        assert resp.status_code == 404
 
     def test_mark_read_requires_token(self, client):
         resp = client.patch("/insights/some-id/read")

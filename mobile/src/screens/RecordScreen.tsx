@@ -3,11 +3,18 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Platform } f
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  AudioModule,
+  setAudioModeAsync,
+} from 'expo-audio';
 import { Colors } from '../theme/colors';
 import * as AnalyticsAPI from '../api/analytics.api';
 
-// expo-av metering: 0 dB = max, -160 dB = silence. Map [-60, -5] → [0, 100]
+// expo-audio metering: 0 dB = max, -160 dB = silence. Map [-60, -5] → [0, 100].
+// NOTE: this is loudness-based heuristic detection. The CNN classifier
+// described in the marketing copy is on the roadmap but not shipped yet.
 const DB_FLOOR = -60;
 const DB_CEIL  = -5;
 const dbToIntensity = (db: number): number =>
@@ -21,8 +28,9 @@ const classify = (lvl: number): SoundInfo => {
   return               { label: 'Loud Snoring 😤', cls: 'snoring',   color: Colors.danger };
 };
 
-const CHUNK_SECONDS = 30;
-const BAR_COUNT     = 22;
+const CHUNK_SECONDS    = 30;
+const BAR_COUNT        = 22;
+const METER_POLL_MS    = 200;
 
 type Phase = 'idle' | 'recording' | 'stopping';
 
@@ -33,12 +41,18 @@ export default function RecordScreen({ navigation }: any) {
   const [soundInfo, setSoundInfo] = useState<SoundInfo>({ label: 'Silence 😴', cls: 'silence', color: Colors.textMuted });
   const [chunkCount, setChunkCount] = useState(0);
 
+  // expo-audio recorder — metering enabled so we can read `currentMetering`.
+  const recorder = useAudioRecorder({
+    ...RecordingPresets.HIGH_QUALITY,
+    isMeteringEnabled: true,
+  });
+
   // Refs that survive re-renders during long sessions
-  const recordingRef    = useRef<Audio.Recording | null>(null);
   const sessionIdRef    = useRef<string | null>(null);
   const chunkIdxRef     = useRef(0);
   const chunkTimerRef   = useRef(0);
-  const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tickTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const meterTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const statsRef        = useRef<{ intensities: number[]; classes: string[]; events: number }>({
     intensities: [], classes: [], events: 0,
   });
@@ -79,6 +93,14 @@ export default function RecordScreen({ navigation }: any) {
     }
   }, [phase, pulse, animateBars]);
 
+  // Cleanup on unmount: kill any in-flight timers / recording.
+  useEffect(() => {
+    return () => {
+      if (tickTimerRef.current)  clearInterval(tickTimerRef.current);
+      if (meterTimerRef.current) clearInterval(meterTimerRef.current);
+    };
+  }, []);
+
   // Upload current chunk stats to backend, then reset accumulator
   const flushChunk = useCallback(async () => {
     const stats = statsRef.current;
@@ -96,52 +118,41 @@ export default function RecordScreen({ navigation }: any) {
         dominant_class: dominant,
         snore_event_count: stats.events,
       });
-    } catch { /* best-effort — session ends will still work */ }
+    } catch (err) {
+      // Surfacing every transient network blip during an 8-hour recording
+      // would be noisier than useful — log to the JS console and rely on the
+      // session-end retry to fill in any missed chunks.
+      console.warn('chunk upload failed', err);
+    }
 
     chunkIdxRef.current += 1;
     statsRef.current = { intensities: [], classes: [], events: 0 };
     setChunkCount(c => c + 1);
   }, []);
 
-  // Create a fresh Audio.Recording with metering enabled
-  const startSegment = useCallback(async () => {
-    if (recordingRef.current) {
-      try { await recordingRef.current.stopAndUnloadAsync(); } catch {}
-      recordingRef.current = null;
-    }
+  // Poll the recorder's current metering value and update live UI state.
+  const pollMeter = useCallback(() => {
+    // `recorder.currentMetering` is set by expo-audio when isMeteringEnabled
+    // is true. Missing on web / unsupported devices → treat as silence.
+    const db  = (recorder as any).currentMetering ?? DB_FLOOR;
+    const lvl = dbToIntensity(db);
+    const info = classify(lvl);
 
-    const { recording } = await Audio.Recording.createAsync(
-      { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true },
-      (status) => {
-        if (!status.isRecording) return;
+    setIntensity(lvl);
+    setSoundInfo(info);
+    animateBars(lvl);
 
-        // metering is undefined on web if browser doesn't support it — fall back to 0
-        const db  = (status as any).metering ?? DB_FLOOR;
-        const lvl = dbToIntensity(db);
-        const info = classify(lvl);
-
-        setIntensity(lvl);
-        setSoundInfo(info);
-        animateBars(lvl);
-
-        // Accumulate stats for this chunk
-        const s = statsRef.current;
-        const wasSnoring = s.classes[s.classes.length - 1] === 'snoring';
-        s.intensities.push(lvl);
-        s.classes.push(info.cls);
-        // Count snore onset events (transitions into snoring class)
-        if (info.cls === 'snoring' && !wasSnoring) s.events += 1;
-      },
-      200
-    );
-
-    recordingRef.current = recording;
-  }, [animateBars]);
+    const s = statsRef.current;
+    const wasSnoring = s.classes[s.classes.length - 1] === 'snoring';
+    s.intensities.push(lvl);
+    s.classes.push(info.cls);
+    if (info.cls === 'snoring' && !wasSnoring) s.events += 1;
+  }, [recorder, animateBars]);
 
   const startRecording = async () => {
     try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
+      const { granted } = await AudioModule.requestRecordingPermissionsAsync();
+      if (!granted) {
         Alert.alert(
           'Microphone required',
           'Please allow microphone access in your device settings to record sleep audio.'
@@ -149,14 +160,13 @@ export default function RecordScreen({ navigation }: any) {
         return;
       }
 
-      // iOS: allow recording in silent mode
       if (Platform.OS !== 'web') {
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       }
 
       const res = await AnalyticsAPI.startSession();
       sessionIdRef.current = res.data.session_id;
-      chunkIdxRef.current  = 0;
+      chunkIdxRef.current   = 0;
       chunkTimerRef.current = 0;
       statsRef.current = { intensities: [], classes: [], events: 0 };
 
@@ -164,16 +174,18 @@ export default function RecordScreen({ navigation }: any) {
       setChunkCount(0);
       setPhase('recording');
 
-      await startSegment();
+      await recorder.prepareToRecordAsync();
+      recorder.record();
 
-      timerRef.current = setInterval(async () => {
+      meterTimerRef.current = setInterval(pollMeter, METER_POLL_MS);
+
+      tickTimerRef.current = setInterval(async () => {
         setElapsed(e => e + 1);
         chunkTimerRef.current += 1;
 
         if (chunkTimerRef.current >= CHUNK_SECONDS) {
           chunkTimerRef.current = 0;
           await flushChunk();
-          await startSegment();      // rotate to fresh recording
         }
       }, 1000);
     } catch (err: any) {
@@ -184,15 +196,14 @@ export default function RecordScreen({ navigation }: any) {
 
   const stopRecording = async () => {
     setPhase('stopping');
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (tickTimerRef.current)  { clearInterval(tickTimerRef.current);  tickTimerRef.current  = null; }
+    if (meterTimerRef.current) { clearInterval(meterTimerRef.current); meterTimerRef.current = null; }
 
-    // Stop the active recording segment
     try {
-      if (recordingRef.current) {
-        await recordingRef.current.stopAndUnloadAsync();
-        recordingRef.current = null;
-      }
-    } catch {}
+      await recorder.stop();
+    } catch (err) {
+      console.warn('recorder.stop failed', err);
+    }
 
     // Upload any remaining partial chunk
     await flushChunk();
@@ -206,13 +217,15 @@ export default function RecordScreen({ navigation }: any) {
           { text: 'OK' },
         ]);
       }
-    } catch {
+    } catch (err) {
+      console.warn('endSession failed', err);
       Alert.alert('Saved', 'Session ended.');
     }
 
-    // Reset iOS audio mode
     if (Platform.OS !== 'web') {
-      try { await Audio.setAudioModeAsync({ allowsRecordingIOS: false }); } catch {}
+      try { await setAudioModeAsync({ allowsRecording: false }); } catch (err) {
+        console.warn('reset audio mode failed', err);
+      }
     }
 
     sessionIdRef.current = null;

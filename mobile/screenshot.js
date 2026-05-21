@@ -31,10 +31,25 @@ async function fillInput(page, placeholder, value) {
   await wait(150);
 }
 
+// Resolve Chrome/Chromium path:
+//   1. CHROME_PATH env var wins on every platform
+//   2. otherwise fall back to a common per-OS default
+function resolveChromePath() {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  switch (process.platform) {
+    case 'win32':
+      return 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+    case 'darwin':
+      return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    default:
+      return '/usr/bin/google-chrome';
+  }
+}
+
 (async () => {
   const browser = await puppeteer.launch({
     headless: 'new',
-    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: resolveChromePath(),
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
   const page = await browser.newPage();

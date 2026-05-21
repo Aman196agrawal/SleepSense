@@ -2,14 +2,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    SECRET_KEY: str = "sleepsense-dev-secret-key-32chars!!"
+    # Required — service crashes at startup if not provided (no hard-coded fallback).
+    SECRET_KEY: str
 
     # PostgreSQL (SQLite fallback for local dev)
     DATABASE_URL: str = "sqlite:///./data/inference.db"
 
-    # InfluxDB
+    # InfluxDB. Token is required when INFLUXDB_URL is set; no default.
     INFLUXDB_URL:    str = ""
-    INFLUXDB_TOKEN:  str = "dev-influxdb-token-sleepsense-2024"
+    INFLUXDB_TOKEN:  str = ""
     INFLUXDB_ORG:    str = "sleepsense"
     INFLUXDB_BUCKET: str = "snore_events"
 

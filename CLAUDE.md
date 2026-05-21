@@ -4,7 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-**SleepSense** is an AI-powered sleep/snoring analytics platform currently in the **documentation phase** — no source code exists yet. All design decisions are captured in `docs/`. Development follows the 12-week roadmap in `docs/07_MVP_Features_Stakeholder_Deck.md`.
+**SleepSense** is a sleep/snoring analytics platform. The original design docs
+in `docs/` describe a full 6-microservice production architecture. The current
+repo ships a working **sample build** of that vision:
+
+- Two Python/FastAPI services are implemented end-to-end: `auth-service` and
+  `analytics-service`. Stub directories exist for the other four planned
+  services (`audio-ingestion-service`, `ml-inference-service`,
+  `notification-service`, `insight-engine`).
+- A React Native + Expo (SDK 54) mobile app under `mobile/` consumes both
+  services, with screens for onboarding, auth, recording, history,
+  lifestyle logging, insights, and profile.
+- `docker-compose.yml` spins up the full infra stack
+  (PostgreSQL + Redis + Kafka + InfluxDB + MinIO) so the two services run
+  against the same primitives they will in production.
+- Sound classification on the Record screen is currently **loudness-based
+  heuristics**, not the CNN model described in `docs/04_ML_Pipeline_Architecture.md`.
+  The CNN is on the roadmap.
+
+The 12-week roadmap in `docs/07_MVP_Features_Stakeholder_Deck.md` is still the
+target — `docs/` describes where we are headed; the code is the snapshot of
+where we are now.
 
 ## Tech Stack
 
@@ -58,16 +78,19 @@ airflow dags trigger snore_model_training
 
 ## Architecture
 
-### Microservices (6 core services)
+### Microservices (6 core services planned; 2 implemented today)
 
-1. **Auth Service** — JWT + OAuth2 (Google, Apple), refresh tokens (30d TTL), RBAC
-2. **Audio Ingestion Service** — Accepts 30s Opus chunks via multipart upload → stores in S3 → emits Kafka events
-3. **ML Inference Service** — Consumes Kafka events → runs CNN classifier + XGBoost regressor → writes to InfluxDB
-4. **Analytics Service** — Aggregates chunk results into session-level stats and sleep quality scores (0-100)
-5. **Notification Service** — FCM/APNs push, SendGrid email, in-app alerts
-6. **Insight Engine** — Rule-based + LLM recommendations from historical patterns
+1. **Auth Service** ✅ — JWT, OAuth2 (Google), refresh tokens (30d TTL), per-IP login rate-limiting, password reset
+2. **Audio Ingestion Service** — *planned* — Accepts 30s Opus chunks via multipart upload → stores in S3 → emits Kafka events
+3. **ML Inference Service** — *planned* — Consumes Kafka events → runs CNN classifier + XGBoost regressor → writes to InfluxDB
+4. **Analytics Service** ✅ — Sessions, chunk uploads, timeline buckets, trends, lifestyle logs, insights (rule-based pattern engine in `patterns.py`, score math in `scoring.py`)
+5. **Notification Service** — *planned* — FCM/APNs push, SendGrid email, in-app alerts
+6. **Insight Engine** — *planned* — Rule-based + LLM recommendations from historical patterns
 
-Each service uses a **4-layer pattern**: API routes → Service (business logic) → Repository (data access) → Domain (Pydantic models).
+Each service uses a simple **routes → models → helpers** layout (FastAPI
+routers in `app/routes/`, SQLAlchemy models in `app/models.py`, infra clients
+in `app/{kafka,influx,redis}_client.py`). The full 4-layer pattern from the
+design docs is what we will grow into; today's services are simpler than that.
 
 ### Data Flow
 ```

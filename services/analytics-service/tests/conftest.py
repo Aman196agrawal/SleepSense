@@ -1,3 +1,10 @@
+import os
+
+# Required env vars must be set before app.config is imported anywhere.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-prod-32chars")
+# Skip the inter-service user-existence check in tests (no auth-service running).
+os.environ.setdefault("AUTH_SERVICE_URL", "")
+
 import pytest
 from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient

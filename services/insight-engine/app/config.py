@@ -2,7 +2,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    SECRET_KEY: str = "sleepsense-dev-secret-key-32chars!!"
+    # Required — service crashes at startup if not provided (no hard-coded fallback).
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
 
     DATABASE_URL: str = "sqlite:////app/data/insights.db"

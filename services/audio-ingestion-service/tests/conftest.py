@@ -1,3 +1,8 @@
+import os
+
+# Required env vars must be set before app.config is imported anywhere.
+os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-prod-32chars")
+
 import pytest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
@@ -11,7 +16,10 @@ from app.database import Base, get_db
 import app.routes.sessions as _sessions_mod
 
 TEST_DB_URL = "sqlite:///:memory:"
-TEST_SECRET  = "dev-secret-key-change-in-production"
+# Use whatever SECRET_KEY the app loaded (set above via os.environ.setdefault)
+# so JWTs we mint here verify against the same key the app uses.
+from app.config import settings as _settings
+TEST_SECRET = _settings.SECRET_KEY
 
 engine = create_engine(
     TEST_DB_URL,

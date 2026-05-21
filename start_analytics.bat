@@ -2,7 +2,8 @@
 title SleepSense - Analytics Service (Port 8002)
 cd /d "C:\Users\BIT\OneDrive\Desktop\Nitu Chacha\SnoreLab\services\analytics-service"
 set DATABASE_URL=sqlite:///./data/analytics.db
-set SECRET_KEY=sleepsense-dev-secret-key-32chars!!
+REM Local-dev convenience secret. Override via .env for any shared/remote use.
+set SECRET_KEY=local-dev-only-not-for-production-use!!
 echo.
 echo ================================================
 echo   SleepSense - Analytics Service
