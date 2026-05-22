@@ -1,13 +1,14 @@
 import json as _json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User, UserHealthProfile
+from app.models import User, UserHealthProfile, RefreshToken, SocialAccount, PasswordResetToken
 from app.schemas import (
     UserResponse, UpdateProfileRequest,
     HealthProfileRequest, HealthProfileResponse,
 )
 from app.security import get_current_user_id
+from app.redis_client import get_redis
 
 router = APIRouter()
 
@@ -82,3 +83,38 @@ def put_health_profile(
     db.commit()
     db.refresh(profile)
     return _profile_to_response(profile)
+
+
+@router.delete("/me", status_code=204)
+def delete_me(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Revoke Redis refresh tokens (best-effort; can't enumerate rt:{token} keys by user)
+    r = get_redis()
+    if r:
+        try:
+            tokens = db.query(RefreshToken).filter(
+                RefreshToken.user_id == user_id, RefreshToken.is_revoked == False
+            ).all()
+            for t in tokens:
+                r.delete(f"rt:{t.token}")
+        except Exception:
+            pass
+
+    # Explicit cascade (SQLite may not enforce FK ON DELETE CASCADE)
+    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user_id).delete()
+    db.query(RefreshToken).filter(RefreshToken.user_id == user_id).delete()
+    db.query(SocialAccount).filter(SocialAccount.user_id == user_id).delete()
+    db.query(UserHealthProfile).filter(UserHealthProfile.user_id == user_id).delete()
+    db.delete(user)
+    db.commit()
+    # Analytics-service data (sessions, insights, lifestyle logs) must also be purged.
+    # In the full architecture, publish a `user.deleted` Kafka event that the
+    # Analytics Service consumes. In the sample build, call the analytics service
+    # internal deletion endpoint as a follow-up step.
+    return Response(status_code=204)

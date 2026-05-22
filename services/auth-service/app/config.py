@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # Comma-separated origin allowlist for CORS. Use "*" only for dev.
     CORS_ALLOWED_ORIGINS: str = "http://localhost:8081,http://localhost:19006,http://localhost:3000"
 
+    # SendGrid — leave blank to skip email sending (dev / test environments)
+    SENDGRID_API_KEY: str = ""
+    SENDGRID_FROM_EMAIL: str = "noreply@sleepsense.app"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

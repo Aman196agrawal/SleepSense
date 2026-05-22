@@ -2,7 +2,13 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AuthAPI from '../api/auth.api';
 
-interface User { id: string; email: string; display_name?: string; timezone: string; }
+interface User {
+  id: string;
+  email: string;
+  display_name?: string;
+  timezone: string;
+  bedtime_reminder_time?: string;
+}
 
 interface AuthState {
   user: User | null;
@@ -12,6 +18,7 @@ interface AuthState {
   socialLoginGoogle: (id_token: string) => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (token: string, new_password: string) => Promise<void>;
+  updateProfile: (data: Record<string, any>) => Promise<void>;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
 }
@@ -73,6 +80,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   resetPassword: async (token, new_password) => {
     await AuthAPI.resetPassword(token, new_password);
+  },
+
+  updateProfile: async (data) => {
+    await AuthAPI.updateMe(data);
+    const me = await AuthAPI.getMe();
+    set({ user: me.data });
   },
 
   logout: async () => {

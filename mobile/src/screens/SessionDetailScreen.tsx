@@ -63,6 +63,45 @@ export default function SessionDetailScreen({ route, navigation }: any) {
           <StatCard icon="trending-up-outline" label="Events / hr"       value={`${session.snore_events_per_hour ?? 0}`} color={Colors.fair} />
         </View>
 
+        {/* Score Breakdown (FR-SCORE-002) */}
+        {session.sleep_quality_score !== undefined && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Score Breakdown</Text>
+            <View style={styles.breakdownCard}>
+              {(() => {
+                const snoreRatio   = (session.snoring_percentage ?? 0) / 100;
+                const snoringImpact  = Math.round(snoreRatio * 40);
+                const intensityPenalty = Math.round((session.avg_snore_intensity ?? 0) / 100 * 25);
+                const hours          = (session.duration_minutes ?? 0) / 60;
+                const interruptions  = Math.round((session.snore_events_per_hour ?? 0) * hours);
+                const interruptionPenalty = Math.min(interruptions * 2, 20);
+                const durationPenalty = session.duration_minutes < 360
+                  ? Math.round(Math.max(0, (360 - (session.duration_minutes ?? 0)) / 360 * 15))
+                  : 0;
+
+                const items = [
+                  { label: 'Snoring time',   penalty: snoringImpact,    desc: `${session.snoring_percentage ?? 0}% of the night` },
+                  { label: 'Snore intensity',penalty: intensityPenalty, desc: `Avg intensity ${Math.round(session.avg_snore_intensity ?? 0)}` },
+                  { label: 'Interruptions',  penalty: interruptionPenalty, desc: `~${interruptions} events` },
+                  { label: 'Sleep duration', penalty: durationPenalty,  desc: durationPenalty > 0 ? 'Less than 6 hours' : 'Sufficient duration' },
+                ];
+
+                return items.map(item => (
+                  <View key={item.label} style={styles.breakdownRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.breakdownLabel}>{item.label}</Text>
+                      <Text style={styles.breakdownDesc}>{item.desc}</Text>
+                    </View>
+                    <Text style={[styles.breakdownPenalty, { color: item.penalty > 0 ? Colors.danger : Colors.excellent }]}>
+                      {item.penalty > 0 ? `-${item.penalty}` : '0'} pts
+                    </Text>
+                  </View>
+                ));
+              })()}
+            </View>
+          </View>
+        )}
+
         {/* Timeline */}
         {timeline.length > 0 && (
           <View style={styles.section}>
@@ -107,4 +146,9 @@ const styles = StyleSheet.create({
   legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot:   { width: 8, height: 8, borderRadius: 4 },
   legendText:  { color: Colors.textMuted, fontSize: 11 },
+  breakdownCard:    { backgroundColor: Colors.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.border, gap: 12 },
+  breakdownRow:     { flexDirection: 'row', alignItems: 'center' },
+  breakdownLabel:   { color: Colors.text, fontWeight: '600', fontSize: 13 },
+  breakdownDesc:    { color: Colors.textMuted, fontSize: 11, marginTop: 2 },
+  breakdownPenalty: { fontWeight: '700', fontSize: 14, minWidth: 52, textAlign: 'right' },
 });

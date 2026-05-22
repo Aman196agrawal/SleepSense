@@ -18,8 +18,11 @@ class User(Base):
     display_name  = Column(String, nullable=True)
     weight_kg     = Column(Float, nullable=True)
     height_cm     = Column(Float, nullable=True)
-    timezone      = Column(String, default="Asia/Kolkata")
-    is_active     = Column(Boolean, default=True)
+    timezone              = Column(String, default="Asia/Kolkata")
+    bedtime_reminder_time = Column(String, nullable=True)
+    is_active             = Column(Boolean, default=True)
+    is_verified   = Column(Boolean, default=False)
+    role          = Column(String, default="user")   # user | admin | researcher
     created_at    = Column(DateTime, default=_utcnow)
     updated_at    = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 

@@ -1,3 +1,7 @@
+import base64
+import csv
+import io
+import json
 import logging
 import random
 import uuid
@@ -5,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
@@ -130,6 +135,12 @@ def upload_chunk(
 @router.post("", status_code=201)
 def start_session(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)):
     _ensure_seeded(user_id, db)
+    existing = db.query(SleepSession).filter(
+        SleepSession.user_id == user_id,
+        SleepSession.status == "recording",
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="A recording session is already active. End it before starting a new one.")
     session = SleepSession(
         id=str(uuid.uuid4()),
         user_id=user_id,
@@ -249,21 +260,106 @@ def end_session(
     return session
 
 
-@router.get("", response_model=list[SessionResponse])
+def _encode_cursor(started_at: datetime, session_id: str) -> str:
+    data = json.dumps({"at": started_at.isoformat(), "id": session_id})
+    return base64.b64encode(data.encode()).decode()
+
+
+def _decode_cursor(cursor: str) -> tuple:
+    data = json.loads(base64.b64decode(cursor.encode()).decode())
+    return datetime.fromisoformat(data["at"]), data["id"]
+
+
+@router.get("/export")
+def export_sessions(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """CSV export of all session summaries (FR-HIST-006)."""
+    q = db.query(SleepSession).filter(
+        SleepSession.user_id == user_id, SleepSession.status == "complete"
+    )
+    if from_date:
+        q = q.filter(SleepSession.started_at >= datetime.fromisoformat(from_date))
+    if to_date:
+        q = q.filter(SleepSession.started_at <= datetime.fromisoformat(to_date))
+    sessions = q.order_by(SleepSession.started_at.desc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "date", "start_time", "end_time", "duration_hours",
+        "quality_score", "quality_grade", "snoring_percentage",
+        "snoring_duration_min", "avg_intensity", "max_intensity",
+        "snore_events_per_hour",
+    ])
+    for s in sessions:
+        writer.writerow([
+            s.started_at.strftime("%Y-%m-%d") if s.started_at else "",
+            s.started_at.strftime("%H:%M") if s.started_at else "",
+            s.ended_at.strftime("%H:%M") if s.ended_at else "",
+            round((s.duration_minutes or 0) / 60, 2),
+            s.sleep_quality_score or "",
+            s.sleep_quality_grade or "",
+            s.snoring_percentage or "",
+            s.snoring_duration_min or "",
+            s.avg_snore_intensity or "",
+            s.max_snore_intensity or "",
+            s.snore_events_per_hour or "",
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=sleep_sessions.csv"},
+    )
+
+
+@router.get("")
 def list_sessions(
     limit: int = 20,
+    cursor: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     _ensure_seeded(user_id, db)
-    sessions = (
-        db.query(SleepSession)
-        .filter(SleepSession.user_id == user_id, SleepSession.status == "complete")
-        .order_by(SleepSession.started_at.desc())
-        .limit(limit)
-        .all()
+    q = db.query(SleepSession).filter(
+        SleepSession.user_id == user_id, SleepSession.status == "complete"
     )
-    return sessions
+    if from_date:
+        q = q.filter(SleepSession.started_at >= datetime.fromisoformat(from_date))
+    if to_date:
+        q = q.filter(SleepSession.started_at <= datetime.fromisoformat(to_date))
+
+    if cursor:
+        try:
+            cursor_at, cursor_id = _decode_cursor(cursor)
+            q = q.filter(
+                (SleepSession.started_at < cursor_at) |
+                ((SleepSession.started_at == cursor_at) & (SleepSession.id < cursor_id))
+            )
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid cursor token")
+
+    sessions = q.order_by(SleepSession.started_at.desc()).limit(limit + 1).all()
+    has_more = len(sessions) > limit
+    sessions = sessions[:limit]
+
+    next_cursor = None
+    if has_more and sessions:
+        last = sessions[-1]
+        next_cursor = _encode_cursor(last.started_at, last.id)
+
+    return {
+        "sessions": [SessionResponse.model_validate(s) for s in sessions],
+        "next_cursor": next_cursor,
+        "has_more": has_more,
+    }
 
 
 @router.get("/{session_id}", response_model=SessionResponse)
@@ -278,3 +374,67 @@ def get_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@router.get("/{session_id}/status")
+def get_session_status(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Session processing status with Redis cache (FR-REC-005)."""
+    from app.redis_client import get_redis as _get_redis
+    r = _get_redis()
+    cache_key = f"session:status:{session_id}"
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
+    session = db.query(SleepSession).filter(
+        SleepSession.id == session_id, SleepSession.user_id == user_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    total = session.total_chunks or 0
+    processed = session.processed_chunks or 0
+    result = {
+        "session_id": session_id,
+        "status": session.status,
+        "processed_chunks": processed,
+        "total_chunks": total,
+        "percent_complete": round(processed / total * 100, 1) if total else 0,
+    }
+
+    if r and session.status in ("complete", "failed"):
+        try:
+            r.setex(cache_key, 86400, json.dumps(result))
+        except Exception:
+            pass
+
+    return result
+
+
+@router.delete("/{session_id}/audio", status_code=200)
+def delete_session_audio(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Delete raw audio files for a session while keeping the analysis summary (FR-PRIV-002).
+
+    In the full pipeline this removes S3 objects. In the sample build (no raw audio stored),
+    this is a no-op that returns success — the session summary is always retained.
+    """
+    session = db.query(SleepSession).filter(
+        SleepSession.id == session_id, SleepSession.user_id == user_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    # Production: iterate and delete s3://sleepsense-audio/{user_id}/{session_id}/chunk_*.opus
+    # Sample build: audio was never stored in S3; no-op.
+    return {"session_id": session_id, "audio_deleted": True, "summary_retained": True}

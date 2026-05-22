@@ -21,10 +21,10 @@ def verify_password(plain: str, hashed: str | None) -> bool:
     except (ValueError, TypeError):
         return False
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: str, role: str = "user") -> str:
     expire = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(
-        {"sub": user_id, "exp": expire, "type": "access", "jti": str(uuid.uuid4())},
+        {"sub": user_id, "exp": expire, "type": "access", "jti": str(uuid.uuid4()), "role": role},
         settings.SECRET_KEY, algorithm=settings.ALGORITHM,
     )
 
@@ -46,3 +46,16 @@ def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(bear
     if payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token type")
     return payload["sub"]
+
+
+def require_role(*allowed: str):
+    """FastAPI dependency that enforces RBAC. Usage: Depends(require_role('admin'))"""
+    def _check(credentials: HTTPAuthorizationCredentials = Depends(bearer)) -> str:
+        payload = decode_token(credentials.credentials)
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        user_role = payload.get("role", "user")
+        if user_role not in allowed:
+            raise HTTPException(status_code=403, detail=f"Requires role: {', '.join(allowed)}")
+        return payload["sub"]
+    return _check

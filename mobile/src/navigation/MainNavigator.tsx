@@ -11,6 +11,7 @@ import ProfileScreen       from '../screens/ProfileScreen';
 import SessionDetailScreen from '../screens/SessionDetailScreen';
 import LifestyleLogScreen  from '../screens/LifestyleLogScreen';
 import HealthProfileScreen from '../screens/HealthProfileScreen';
+import GoalsScreen        from '../screens/GoalsScreen';
 
 // ── Stack param types ────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ export type HistoryStackParams = {
 export type ProfileStackParams = {
   ProfileMain:   undefined;
   HealthProfile: undefined;
+  Goals:         undefined;
 };
 
 export type MainTabParams = {
@@ -70,6 +72,7 @@ function ProfileStack() {
     <ProfileStackNav_.Navigator screenOptions={{ headerShown: false }}>
       <ProfileStackNav_.Screen name="ProfileMain"    component={ProfileScreen} />
       <ProfileStackNav_.Screen name="HealthProfile"  component={HealthProfileScreen} />
+      <ProfileStackNav_.Screen name="Goals"          component={GoalsScreen} />
     </ProfileStackNav_.Navigator>
   );
 }

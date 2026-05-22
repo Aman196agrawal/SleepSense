@@ -11,6 +11,7 @@ import {
 } from 'expo-audio';
 import { Colors } from '../theme/colors';
 import * as AnalyticsAPI from '../api/analytics.api';
+import { sleepSenseWS } from '../api/ws';
 
 // expo-audio metering: 0 dB = max, -160 dB = silence. Map [-60, -5] → [0, 100].
 // NOTE: this is loudness-based heuristic detection. The CNN classifier
@@ -40,6 +41,7 @@ export default function RecordScreen({ navigation }: any) {
   const [intensity, setIntensity] = useState(0);
   const [soundInfo, setSoundInfo] = useState<SoundInfo>({ label: 'Silence 😴', cls: 'silence', color: Colors.textMuted });
   const [chunkCount, setChunkCount] = useState(0);
+  const [privacyMode, setPrivacyMode] = useState(false);
 
   // expo-audio recorder — metering enabled so we can read `currentMetering`.
   const recorder = useAudioRecorder({
@@ -48,6 +50,7 @@ export default function RecordScreen({ navigation }: any) {
   });
 
   // Refs that survive re-renders during long sessions
+  const privacyModeRef  = useRef(false);
   const sessionIdRef    = useRef<string | null>(null);
   const chunkIdxRef     = useRef(0);
   const chunkTimerRef   = useRef(0);
@@ -164,8 +167,14 @@ export default function RecordScreen({ navigation }: any) {
         await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       }
 
-      const res = await AnalyticsAPI.startSession();
-      sessionIdRef.current = res.data.session_id;
+      privacyModeRef.current = privacyMode;
+      if (!privacyMode) {
+        const res = await AnalyticsAPI.startSession();
+        sessionIdRef.current = res.data.session_id;
+        sleepSenseWS.connect();
+      } else {
+        sessionIdRef.current = null; // local-only session
+      }
       chunkIdxRef.current   = 0;
       chunkTimerRef.current = 0;
       statsRef.current = { intensities: [], classes: [], events: 0 };
@@ -216,6 +225,8 @@ export default function RecordScreen({ navigation }: any) {
           { text: 'View Report', onPress: () => navigation.navigate('Home') },
           { text: 'OK' },
         ]);
+      } else if (privacyModeRef.current) {
+        Alert.alert('Privacy Session Saved', 'Audio stayed on your device. No data was uploaded.');
       }
     } catch (err) {
       console.warn('endSession failed', err);
@@ -228,6 +239,7 @@ export default function RecordScreen({ navigation }: any) {
       }
     }
 
+    sleepSenseWS.disconnect();
     sessionIdRef.current = null;
     setPhase('idle');
     setElapsed(0);
@@ -276,6 +288,9 @@ export default function RecordScreen({ navigation }: any) {
               <Text style={styles.intensityText}>
                 Intensity {intensity} · {chunkCount} chunk{chunkCount !== 1 ? 's' : ''} saved
               </Text>
+              {privacyMode && (
+                <Text style={styles.privacyActive}>Shield  Privacy Mode Active — audio not uploaded</Text>
+              )}
             </View>
           </>
         )}
@@ -333,14 +348,28 @@ export default function RecordScreen({ navigation }: any) {
         </Text>
 
         {phase === 'idle' && (
-          <View style={styles.tipsRow}>
-            {['Quiet room', 'Phone nearby', 'Do not disturb'].map(tip => (
-              <View key={tip} style={styles.tip}>
-                <Ionicons name="checkmark-circle" size={14} color={Colors.primary} />
-                <Text style={styles.tipText}>{tip}</Text>
-              </View>
-            ))}
-          </View>
+          <>
+            <View style={styles.privacyRow}>
+              <Ionicons name="shield-checkmark-outline" size={16} color={privacyMode ? Colors.excellent : Colors.textMuted} />
+              <Text style={[styles.privacyLabel, privacyMode && { color: Colors.excellent }]}>
+                Privacy Mode {privacyMode ? 'ON — audio stays on device' : 'OFF'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setPrivacyMode(p => !p)}
+                style={[styles.privacyToggle, privacyMode && styles.privacyToggleOn]}
+              >
+                <View style={[styles.privacyThumb, privacyMode && styles.privacyThumbOn]} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.tipsRow}>
+              {['Quiet room', 'Phone nearby', 'Do not disturb'].map(tip => (
+                <View key={tip} style={styles.tip}>
+                  <Ionicons name="checkmark-circle" size={14} color={Colors.primary} />
+                  <Text style={styles.tipText}>{tip}</Text>
+                </View>
+              ))}
+            </View>
+          </>
         )}
       </View>
     </SafeAreaView>
@@ -367,4 +396,11 @@ const styles = StyleSheet.create({
   tipsRow:       { gap: 8 },
   tip:           { flexDirection: 'row', alignItems: 'center', gap: 6 },
   tipText:       { color: Colors.textSub, fontSize: 13 },
+  privacyRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  privacyLabel:    { color: Colors.textMuted, fontSize: 12, flex: 1 },
+  privacyToggle:   { width: 40, height: 22, borderRadius: 11, backgroundColor: Colors.border, justifyContent: 'center', paddingHorizontal: 2 },
+  privacyToggleOn: { backgroundColor: Colors.excellent + '55' },
+  privacyThumb:    { width: 18, height: 18, borderRadius: 9, backgroundColor: Colors.textMuted },
+  privacyThumbOn:  { backgroundColor: Colors.excellent, alignSelf: 'flex-end' },
+  privacyActive: { color: Colors.excellent, fontSize: 11, marginTop: 4, textAlign: 'center' },
 });

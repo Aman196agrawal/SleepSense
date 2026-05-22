@@ -1,10 +1,13 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import engine, Base
+from app.database import engine, Base, get_db
+from app.redis_client import get_redis
 from app.routes import auth, users
 
 logging.basicConfig(
@@ -34,3 +37,17 @@ app.include_router(users.router, prefix="/users", tags=["Users"])
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "auth-service"}
+
+@app.get("/ready")
+def ready(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database not ready")
+    r = get_redis()
+    return {
+        "status": "ready",
+        "service": "auth-service",
+        "db": "ok",
+        "redis": "ok" if r else "unavailable",
+    }

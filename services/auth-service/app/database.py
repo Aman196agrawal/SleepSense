@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import settings
@@ -22,6 +22,25 @@ except ModuleNotFoundError as e:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+
+def _run_migrations(eng):
+    """Add columns that don't exist yet (SQLite ALTER TABLE is limited)."""
+    stmts = [
+        "ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'user'",
+        "ALTER TABLE users ADD COLUMN bedtime_reminder_time VARCHAR",
+    ]
+    with eng.connect() as conn:
+        for stmt in stmts:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass  # Column already exists — ignore
+
+
+_run_migrations(engine)
 
 
 def get_db():

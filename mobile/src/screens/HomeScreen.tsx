@@ -15,19 +15,25 @@ export default function HomeScreen({ navigation }: any) {
   const [session, setSession]     = useState<any>(null);
   const [insights, setInsights]   = useState<any[]>([]);
   const [weekly, setWeekly]       = useState<any>(null);
+  const [streak, setStreak]       = useState<any>(null);
+  const [correlations, setCorrelations] = useState<any[]>([]);
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [sessRes, insRes, wkRes] = await Promise.all([
+      const [sessRes, insRes, wkRes, streakRes, corrRes] = await Promise.all([
         AnalyticsAPI.getSessions(1),
         AnalyticsAPI.getInsights(),
         AnalyticsAPI.getWeeklySummary(),
+        AnalyticsAPI.getStreak(),
+        AnalyticsAPI.getLifestyleCorrelations(),
       ]);
-      setSession(sessRes.data[0] ?? null);
+      setSession(sessRes.data.sessions?.[0] ?? null);
       setInsights(insRes.data.slice(0, 3));
       setWeekly(wkRes.data);
+      setStreak(streakRes.data);
+      setCorrelations(corrRes.data?.correlations?.slice(0, 2) ?? []);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   }, []);
@@ -119,6 +125,17 @@ export default function HomeScreen({ navigation }: any) {
           </View>
         )}
 
+        {/* Streak banner */}
+        {streak && streak.current_streak > 0 && (
+          <View style={styles.streakBanner}>
+            <Text style={styles.streakEmoji}>🔥</Text>
+            <View>
+              <Text style={styles.streakTitle}>{streak.current_streak}-night recording streak</Text>
+              <Text style={styles.streakSub}>Longest: {streak.longest_streak} nights · Total: {streak.total_nights_recorded}</Text>
+            </View>
+          </View>
+        )}
+
         {/* Log Today quick action */}
         <TouchableOpacity
           style={styles.logBanner}
@@ -140,6 +157,21 @@ export default function HomeScreen({ navigation }: any) {
             <Text style={styles.sectionTitle}>Insights</Text>
             {insights.map(ins => (
               <InsightCard key={ins.id} title={ins.title} body={ins.body} type={ins.insight_type} />
+            ))}
+          </View>
+        )}
+
+        {correlations.length > 0 && (
+          <View style={{ marginTop: 8 }}>
+            <Text style={styles.sectionTitle}>Lifestyle Impact</Text>
+            {correlations.map((c: any, i: number) => (
+              <View key={i} style={styles.corrCard}>
+                <Ionicons name="analytics-outline" size={18} color={Colors.secondary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.corrTitle}>{c.title}</Text>
+                  <Text style={styles.corrBody}>{c.body}</Text>
+                </View>
+              </View>
             ))}
           </View>
         )}
@@ -176,4 +208,11 @@ const styles = StyleSheet.create({
   weekVal:      { color: Colors.text, fontWeight: '800', fontSize: 22 },
   weekLbl:      { color: Colors.textMuted, fontSize: 12, marginTop: 2 },
   sectionTitle: { color: Colors.text, fontWeight: '700', fontSize: 16, marginBottom: 12 },
+  streakBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: Colors.amber + '55' },
+  streakEmoji:  { fontSize: 28 },
+  streakTitle:  { color: Colors.text, fontWeight: '700', fontSize: 14 },
+  streakSub:    { color: Colors.textMuted, fontSize: 12, marginTop: 2 },
+  corrCard:  { flexDirection: 'row', gap: 10, backgroundColor: Colors.surface, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: Colors.secondary + '33' },
+  corrTitle: { color: Colors.text, fontWeight: '600', fontSize: 13, marginBottom: 4 },
+  corrBody:  { color: Colors.textMuted, fontSize: 12, lineHeight: 18 },
 });

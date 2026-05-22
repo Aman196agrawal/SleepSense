@@ -31,3 +31,5 @@ export const getHealthProfile = () =>
 
 export const putHealthProfile = (data: Record<string, any>) =>
   authClient.put('/users/me/health-profile', data);
+
+export const deleteAccount = () => authClient.delete('/users/me');

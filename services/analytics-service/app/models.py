@@ -73,3 +73,16 @@ class SeededUser(Base):
     __tablename__ = "seeded_users"
     user_id    = Column(String, primary_key=True)
     seeded_at  = Column(DateTime, default=_utcnow)
+
+class UserGoal(Base):
+    __tablename__ = "user_goals"
+
+    id            = Column(String, primary_key=True, default=gen_uuid)
+    user_id       = Column(String, nullable=False, index=True)
+    goal_type     = Column(String, nullable=False)   # quality_score | recording_streak
+    target_value  = Column(Float, nullable=False)
+    current_value = Column(Float, default=0.0)
+    is_achieved   = Column(Boolean, default=False)
+    target_date   = Column(String, nullable=True)    # ISO 8601 date string
+    created_at    = Column(DateTime, default=_utcnow)
+    updated_at    = Column(DateTime, default=_utcnow, onupdate=_utcnow)

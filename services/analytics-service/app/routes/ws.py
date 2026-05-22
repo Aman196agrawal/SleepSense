@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException
 from app.security import decode_token
@@ -46,11 +47,23 @@ async def websocket_endpoint(ws: WebSocket, token: str = Query(...)):
         return
 
     await manager.connect(user_id, ws)
+
+    async def heartbeat():
+        try:
+            while True:
+                await asyncio.sleep(30)
+                await ws.send_json({"event": "ping"})
+        except Exception:
+            pass
+
+    hb_task = asyncio.create_task(heartbeat())
     try:
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:
-        manager.disconnect(user_id, ws)
+        pass
     except Exception as exc:
         _logger.debug("WebSocket error for user=%s: %s", user_id, exc)
+    finally:
+        hb_task.cancel()
         manager.disconnect(user_id, ws)

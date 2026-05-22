@@ -1,4 +1,5 @@
-from pydantic import BaseModel, EmailStr, ConfigDict, Field
+import re
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 from typing import Optional, List, Literal
 from datetime import datetime
 
@@ -6,6 +7,22 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     display_name: str
+
+    @field_validator('password')
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        errors = []
+        if len(v) < 8:
+            errors.append('at least 8 characters')
+        if not re.search(r'[A-Z]', v):
+            errors.append('one uppercase letter')
+        if not re.search(r'\d', v):
+            errors.append('one number')
+        if not re.search(r'[!@#$%^&*()\-_=+\[\]{};:\'",.<>?/\\|`~]', v):
+            errors.append('one special character')
+        if errors:
+            raise ValueError(f"Password must contain: {', '.join(errors)}")
+        return v
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -27,6 +44,9 @@ class UserResponse(BaseModel):
     weight_kg: Optional[float]
     height_cm: Optional[float]
     timezone: str
+    bedtime_reminder_time: Optional[str] = None
+    is_verified: bool = False
+    role: str = "user"
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -36,6 +56,7 @@ class UpdateProfileRequest(BaseModel):
     weight_kg: Optional[float] = Field(default=None, ge=0, le=500)
     height_cm: Optional[float] = Field(default=None, ge=0, le=300)
     timezone: Optional[str] = None
+    bedtime_reminder_time: Optional[str] = None
 
 class HealthProfileRequest(BaseModel):
     sleep_position: Optional[Literal["back", "side", "stomach"]] = None

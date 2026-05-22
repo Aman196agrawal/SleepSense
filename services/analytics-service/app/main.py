@@ -1,11 +1,13 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import engine, Base
-from app.routes import sessions, analytics, insights, lifestyle
+from app.database import engine, Base, get_db
+from app.routes import sessions, analytics, insights, lifestyle, goals
 from app.routes.ws import router as ws_router
 
 logging.basicConfig(
@@ -33,8 +35,17 @@ app.include_router(sessions.router,   prefix="/sessions",  tags=["Sessions"])
 app.include_router(analytics.router,  prefix="/analytics", tags=["Analytics"])
 app.include_router(insights.router,   prefix="/insights",  tags=["Insights"])
 app.include_router(lifestyle.router,  prefix="/lifestyle", tags=["Lifestyle"])
+app.include_router(goals.router,      prefix="/goals",     tags=["Goals"])
 app.include_router(ws_router, tags=["WebSocket"])
 
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "analytics-service"}
+
+@app.get("/ready")
+def ready(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database not ready")
+    return {"status": "ready", "service": "analytics-service", "db": "ok"}

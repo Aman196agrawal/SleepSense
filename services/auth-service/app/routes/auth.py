@@ -26,6 +26,36 @@ router = APIRouter()
 _logger = logging.getLogger(__name__)
 
 
+def _send_email(to: str, subject: str, html: str) -> None:
+    """Send a transactional email via SendGrid, falling back to logging when
+    SENDGRID_API_KEY is not configured (dev / test environments)."""
+    if not settings.SENDGRID_API_KEY:
+        _logger.info("[EMAIL SKIPPED — no SENDGRID_API_KEY] To: %s | Subject: %s", to, subject)
+        return
+    import json as _json_email
+    payload = _json_email.dumps({
+        "personalizations": [{"to": [{"email": to}]}],
+        "from": {"email": settings.SENDGRID_FROM_EMAIL},
+        "subject": subject,
+        "content": [{"type": "text/html", "value": html}],
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.sendgrid.com/v3/mail/send",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {settings.SENDGRID_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status >= 300:
+                _logger.warning("SendGrid returned %s for %s", resp.status, to)
+    except Exception:
+        _logger.warning("SendGrid send failed for %s", to, exc_info=True)
+
+
 # ── Refresh token helpers ──────────────────────────────────────────────────────
 
 def _store_in_db(token: str, user_id: str, db: Session) -> None:
@@ -159,9 +189,16 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    access  = create_access_token(user.id)
+    access  = create_access_token(user.id, getattr(user, 'role', 'user'))
     refresh = create_refresh_token(user.id)
     _store_refresh_token(refresh, user.id, db)
+
+    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={access}"
+    _send_email(
+        to=user.email,
+        subject="SleepSense — Verify your email",
+        html=f"<p>Welcome to SleepSense! Verify your email to get started:</p><a href='{verify_url}'>{verify_url}</a>",
+    )
 
     return TokenResponse(
         access_token=access,
@@ -179,7 +216,7 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    access  = create_access_token(user.id)
+    access  = create_access_token(user.id, getattr(user, 'role', 'user'))
     refresh = create_refresh_token(user.id)
     _store_refresh_token(refresh, user.id, db)
 
@@ -254,7 +291,72 @@ def social_google(body: SocialLoginRequest, db: Session = Depends(get_db)):
         db.add(social)
         db.commit()
 
-    access  = create_access_token(user.id)
+    access  = create_access_token(user.id, getattr(user, 'role', 'user'))
+    refresh = create_refresh_token(user.id)
+    _store_refresh_token(refresh, user.id, db)
+
+    return TokenResponse(
+        access_token=access,
+        refresh_token=refresh,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+@router.post("/social/apple", response_model=TokenResponse)
+def social_apple(body: SocialLoginRequest, db: Session = Depends(get_db)):
+    """Apple Sign-In.
+
+    Decodes the Apple identity token payload to extract `sub` (Apple user ID)
+    and `email`. In production, validate the RS256 JWT signature against Apple's
+    public JWK set from https://appleid.apple.com/auth/keys. The sample build
+    trusts the decoded payload (acceptable for dev; add jose/cryptography-based
+    verification before App Store submission).
+    """
+    import base64 as _b64
+    try:
+        parts = body.id_token.split('.')
+        if len(parts) != 3:
+            raise ValueError("bad format")
+        padded = parts[1] + '=' * (4 - len(parts[1]) % 4)
+        claims = _json.loads(_b64.urlsafe_b64decode(padded))
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Apple identity token")
+
+    apple_uid = claims.get("sub", "")
+    email = claims.get("email", "")
+    if not apple_uid:
+        raise HTTPException(status_code=401, detail="Incomplete Apple token payload")
+
+    social = db.query(SocialAccount).filter(
+        SocialAccount.provider == "apple",
+        SocialAccount.provider_uid == apple_uid,
+    ).first()
+
+    if social:
+        user = db.query(User).filter(User.id == social.user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Associated account no longer exists")
+    else:
+        user = db.query(User).filter(User.email == email).first() if email else None
+        if not user:
+            user = User(
+                id=str(uuid.uuid4()),
+                email=email or f"apple_{apple_uid}@privaterelay.appleid.com",
+                password_hash=None,
+                display_name=claims.get("name", "Apple User"),
+            )
+            db.add(user)
+            db.flush()
+
+        social = SocialAccount(
+            user_id=user.id,
+            provider="apple",
+            provider_uid=apple_uid,
+        )
+        db.add(social)
+        db.commit()
+
+    access  = create_access_token(user.id, getattr(user, 'role', 'user'))
     refresh = create_refresh_token(user.id)
     _store_refresh_token(refresh, user.id, db)
 
@@ -284,8 +386,11 @@ def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
         db.commit()
 
         reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
-        # In production this is sent via SendGrid; log for dev/test environments
-        _logger.info("Password reset link for %s: %s", user.email, reset_url)
+        _send_email(
+            to=user.email,
+            subject="SleepSense — Reset your password",
+            html=f"<p>Click to reset your password (valid 1 hour):</p><a href='{reset_url}'>{reset_url}</a>",
+        )
 
     return {"message": "If that email is registered, a reset link has been sent."}
 
