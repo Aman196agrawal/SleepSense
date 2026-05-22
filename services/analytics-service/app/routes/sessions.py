@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
@@ -18,6 +18,7 @@ from app.influx_client import get_influx_write_api
 from app.kafka_client import emit
 from app.models import SleepSession, TimelineBucket, SessionInsight
 from app.routes.ws import manager as ws_manager
+from app.routes.goals import update_goals_for_user
 from app.scoring import INSIGHT_TEMPLATES, compute_score, grade, make_timeline
 from app.security import get_current_user_id
 from app.seed import seed_user
@@ -46,7 +47,10 @@ class SessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 def _ensure_seeded(user_id: str, db: Session):
-    seed_user(user_id, db)
+    try:
+        seed_user(user_id, db)
+    except Exception:
+        db.rollback()  # swallow duplicate-key races on concurrent first requests
 
 
 # ── Chunk upload ───────────────────────────────────────────────────────────────
@@ -237,6 +241,12 @@ def end_session(
     db.commit()
     db.refresh(session)
 
+    # Update goal progress now that a new session is complete
+    try:
+        update_goals_for_user(user_id, db)
+    except Exception:
+        pass  # Never block session end due to goal computation failure
+
     # ── Kafka: emit session.ended for downstream consumers ─────────────────────
     emit("session.ended", {
         "session_id":          session_id,
@@ -281,10 +291,13 @@ def export_sessions(
     q = db.query(SleepSession).filter(
         SleepSession.user_id == user_id, SleepSession.status == "complete"
     )
-    if from_date:
-        q = q.filter(SleepSession.started_at >= datetime.fromisoformat(from_date))
-    if to_date:
-        q = q.filter(SleepSession.started_at <= datetime.fromisoformat(to_date))
+    try:
+        if from_date:
+            q = q.filter(SleepSession.started_at >= datetime.fromisoformat(from_date))
+        if to_date:
+            q = q.filter(SleepSession.started_at <= datetime.fromisoformat(to_date))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use ISO 8601 (e.g. 2024-01-15).")
     sessions = q.order_by(SleepSession.started_at.desc()).all()
 
     output = io.StringIO()
@@ -320,7 +333,7 @@ def export_sessions(
 
 @router.get("")
 def list_sessions(
-    limit: int = 20,
+    limit: int = Query(20, ge=1, le=100),
     cursor: Optional[str] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
@@ -331,10 +344,13 @@ def list_sessions(
     q = db.query(SleepSession).filter(
         SleepSession.user_id == user_id, SleepSession.status == "complete"
     )
-    if from_date:
-        q = q.filter(SleepSession.started_at >= datetime.fromisoformat(from_date))
-    if to_date:
-        q = q.filter(SleepSession.started_at <= datetime.fromisoformat(to_date))
+    try:
+        if from_date:
+            q = q.filter(SleepSession.started_at >= datetime.fromisoformat(from_date))
+        if to_date:
+            q = q.filter(SleepSession.started_at <= datetime.fromisoformat(to_date))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use ISO 8601 (e.g. 2024-01-15).")
 
     if cursor:
         try:

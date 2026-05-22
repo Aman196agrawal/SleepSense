@@ -68,3 +68,13 @@ class PasswordResetToken(Base):
     expires_at = Column(DateTime, nullable=False)
     is_used    = Column(Boolean, default=False)
     created_at = Column(DateTime, default=_utcnow)
+
+class EmailVerificationToken(Base):
+    __tablename__ = "email_verification_tokens"
+
+    id         = Column(String, primary_key=True, default=gen_uuid)
+    user_id    = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token      = Column(String, unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    is_used    = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=_utcnow)

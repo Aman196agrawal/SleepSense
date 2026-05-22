@@ -9,10 +9,11 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User, RefreshToken, SocialAccount, PasswordResetToken
+from app.models import User, RefreshToken, SocialAccount, PasswordResetToken, EmailVerificationToken
 from app.schemas import (
     RegisterRequest, LoginRequest, RefreshRequest, TokenResponse,
     SocialLoginRequest, ForgotPasswordRequest, ResetPasswordRequest,
+    VerifyEmailRequest,
 )
 from app.security import (
     hash_password, verify_password,
@@ -128,11 +129,11 @@ def _revoke_refresh_token(token: str, db: Session) -> None:
 _rl_store: dict[str, list[float]] = {}  # ip → list of request timestamps (in-memory fallback)
 
 
-def _check_rate_limit(ip: str) -> None:
+def _check_rate_limit(ip: str, action: str = "login") -> None:
     r = get_redis()
     if r:
         try:
-            key = f"ratelimit:login:{ip}"
+            key = f"ratelimit:{action}:{ip}"
             count = r.incr(key)
             if count == 1:
                 r.expire(key, 900)  # 15 minutes
@@ -146,9 +147,10 @@ def _check_rate_limit(ip: str) -> None:
 
     now = time.time()
     window = 900.0
-    timestamps = [t for t in _rl_store.get(ip, []) if now - t < window]
+    store_key = f"{action}:{ip}"
+    timestamps = [t for t in _rl_store.get(store_key, []) if now - t < window]
     timestamps.append(now)
-    _rl_store[ip] = timestamps
+    _rl_store[store_key] = timestamps
     if len(timestamps) > 10:
         raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
 
@@ -175,7 +177,10 @@ def _verify_google_token(id_token: str) -> dict:
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
-def register(body: RegisterRequest, db: Session = Depends(get_db)):
+def register(request: Request, body: RegisterRequest, db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip, "register")
+
     if db.query(User).filter(User.email == body.email).first():
         raise HTTPException(status_code=409, detail="Email already registered")
 
@@ -193,7 +198,17 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     refresh = create_refresh_token(user.id)
     _store_refresh_token(refresh, user.id, db)
 
-    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={access}"
+    # Generate a dedicated one-time verification token (not the bearer access token)
+    verify_token = secrets.token_urlsafe(32)
+    evt = EmailVerificationToken(
+        user_id=user.id,
+        token=verify_token,
+        expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=24),
+    )
+    db.add(evt)
+    db.commit()
+
+    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={verify_token}"
     _send_email(
         to=user.email,
         subject="SleepSense — Verify your email",
@@ -205,6 +220,24 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         refresh_token=refresh,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
+
+
+@router.post("/verify-email")
+def verify_email(body: VerifyEmailRequest, db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    evt = db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.token == body.token,
+        EmailVerificationToken.is_used == False,
+    ).first()
+    if not evt or evt.expires_at < now:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification link")
+    user = db.query(User).filter(User.id == evt.user_id).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid verification link")
+    user.is_verified = True
+    evt.is_used = True
+    db.commit()
+    return {"message": "Email verified successfully"}
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -386,6 +419,7 @@ def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
         db.commit()
 
         reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+        _logger.info("Password reset link for %s: %s", user.email, reset_url)
         _send_email(
             to=user.email,
             subject="SleepSense — Reset your password",

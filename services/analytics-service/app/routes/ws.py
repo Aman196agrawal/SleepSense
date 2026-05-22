@@ -1,10 +1,13 @@
 import asyncio
+import json
 import logging
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from app.security import decode_token
 
 router = APIRouter()
 _logger = logging.getLogger(__name__)
+
+_AUTH_TIMEOUT_SECONDS = 10
 
 
 class ConnectionManager:
@@ -12,7 +15,6 @@ class ConnectionManager:
         self._active: dict[str, list[WebSocket]] = {}
 
     async def connect(self, user_id: str, ws: WebSocket) -> None:
-        await ws.accept()
         self._active.setdefault(user_id, []).append(ws)
         _logger.debug("WebSocket connected: user=%s total=%d", user_id, len(self._active[user_id]))
 
@@ -35,14 +37,21 @@ manager = ConnectionManager()
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket, token: str = Query(...)):
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
+
+    # Post-accept auth: client must send {"token": "<access_token>"} within 10 seconds.
+    # This keeps bearer tokens out of server logs and browser history.
     try:
+        raw = await asyncio.wait_for(ws.receive_text(), timeout=_AUTH_TIMEOUT_SECONDS)
+        msg = json.loads(raw)
+        token = msg.get("token", "")
         payload = decode_token(token)
         if payload.get("type") != "access":
-            await ws.close(code=1008)
-            return
+            raise ValueError("wrong token type")
         user_id = payload["sub"]
-    except HTTPException:
+    except (asyncio.TimeoutError, Exception) as exc:
+        _logger.debug("WS auth failed: %s", exc)
         await ws.close(code=1008)
         return
 

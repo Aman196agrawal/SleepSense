@@ -30,7 +30,19 @@ class SnoreClassifier:
         """Attempt to load a PyTorch model. Falls back to stub on failure."""
         try:
             import torch
-            self._model = torch.load(model_path, map_location="cpu", weights_only=False)
+            # weights_only=True prevents arbitrary code execution if the model file
+            # is tampered with (e.g. replaced in S3). Load state_dict separately.
+            state = torch.load(model_path, map_location="cpu", weights_only=True)
+            if isinstance(state, dict):
+                # Caller stored just the state_dict — build model skeleton first
+                from torchvision.models import efficientnet_b0
+                import torch.nn as nn
+                net = efficientnet_b0()
+                net.classifier[1] = nn.Linear(net.classifier[1].in_features, len(CLASSES))
+                net.load_state_dict(state)
+                self._model = net
+            else:
+                self._model = state
             self._model.eval()
             self.is_stub = False
             _logger.info("Loaded snore classifier from %s", model_path)

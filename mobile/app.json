@@ -34,6 +34,14 @@
         {
           "microphonePermission": "Allow SleepSense to access your microphone to record sleep audio."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0A2463",
+          "sounds": []
+        }
       ]
     ]
   }

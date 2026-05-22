@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
 import { useAuthStore } from '../store/authStore';
 import { useNavigation } from '@react-navigation/native';
+import { scheduleBedtimeReminder } from '../api/notifications';
 
 const MenuItem = ({ icon, label, value, onPress }: any) => (
   <TouchableOpacity style={styles.menuItem} onPress={onPress}>
@@ -72,7 +73,9 @@ export default function ProfileScreen() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateProfile({ bedtime_reminder_time: to24h(pickerH, pickerM, pickerAP) });
+      const hhmm = to24h(pickerH, pickerM, pickerAP);
+      await updateProfile({ bedtime_reminder_time: hhmm });
+      await scheduleBedtimeReminder(hhmm);
       setShowPicker(false);
     } catch {
       Alert.alert('Error', 'Could not save reminder time. Please try again.');

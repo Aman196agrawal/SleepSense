@@ -1,6 +1,6 @@
 @echo off
 title SleepSense - Mobile App (Expo)
-cd /d "C:\Users\BIT\OneDrive\Desktop\Nitu Chacha\SnoreLab\mobile"
+cd /d "%~dp0mobile"
 echo.
 echo ================================================
 echo   SleepSense - Mobile App

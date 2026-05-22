@@ -1,6 +1,6 @@
 @echo off
 title SleepSense - Analytics Service (Port 8002)
-cd /d "C:\Users\BIT\OneDrive\Desktop\Nitu Chacha\SnoreLab\services\analytics-service"
+cd /d "%~dp0services\analytics-service"
 set DATABASE_URL=sqlite:///./data/analytics.db
 REM Local-dev convenience secret. Override via .env for any shared/remote use.
 set SECRET_KEY=local-dev-only-not-for-production-use!!

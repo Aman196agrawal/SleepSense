@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     SENDGRID_API_KEY: str = ""
     SENDGRID_FROM_EMAIL: str = "noreply@sleepsense.app"
 
+    # Analytics service internal URL — used to purge user data on account deletion
+    ANALYTICS_SERVICE_URL: str = "http://localhost:8002"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

@@ -1,4 +1,6 @@
 import json as _json
+import logging
+import urllib.request
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -9,6 +11,9 @@ from app.schemas import (
 )
 from app.security import get_current_user_id
 from app.redis_client import get_redis
+from app.config import settings
+
+_logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -113,8 +118,15 @@ def delete_me(
     db.query(UserHealthProfile).filter(UserHealthProfile.user_id == user_id).delete()
     db.delete(user)
     db.commit()
-    # Analytics-service data (sessions, insights, lifestyle logs) must also be purged.
-    # In the full architecture, publish a `user.deleted` Kafka event that the
-    # Analytics Service consumes. In the sample build, call the analytics service
-    # internal deletion endpoint as a follow-up step.
+
+    # Purge analytics-service data via internal endpoint
+    if settings.ANALYTICS_SERVICE_URL:
+        try:
+            url = f"{settings.ANALYTICS_SERVICE_URL.rstrip('/')}/internal/users/{user_id}"
+            req = urllib.request.Request(url, method="DELETE")
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except Exception:
+            _logger.warning("analytics purge failed for user %s — data may remain", user_id, exc_info=True)
+
     return Response(status_code=204)

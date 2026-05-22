@@ -20,6 +20,7 @@ _logger = logging.getLogger(__name__)
 # _USER_CHECK_TTL_SECONDS after deletion — short enough to be acceptable, long
 # enough to avoid hammering the auth service.
 _USER_CHECK_TTL_SECONDS = 60
+_USER_CACHE_MAX = 10_000
 _user_check_cache: dict[str, float] = {}
 
 
@@ -51,6 +52,11 @@ def _user_exists_in_auth_service(user_id: str, bearer_token: str) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=3) as resp:
             if resp.status == 200:
+                if len(_user_check_cache) >= _USER_CACHE_MAX:
+                    # Evict oldest 10 % of entries to keep memory bounded
+                    oldest = sorted(_user_check_cache.items(), key=lambda kv: kv[1])
+                    for k, _ in oldest[:_USER_CACHE_MAX // 10]:
+                        _user_check_cache.pop(k, None)
                 _user_check_cache[user_id] = now
                 return True
     except urllib.error.HTTPError as e:

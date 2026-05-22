@@ -17,28 +17,30 @@ class TestListSessions:
     def test_list_sessions_returns_seeded_data(self, client, headers_a):
         resp = client.get("/sessions", headers=headers_a)
         assert resp.status_code == 200
-        sessions = resp.json()
-        # Seed produces 30 days of data
-        assert len(sessions) >= 20
+        body = resp.json()
+        assert "sessions" in body
+        assert "has_more" in body
+        # Seed produces 30 days of data; default limit is 20
+        assert len(body["sessions"]) >= 1
 
     def test_list_sessions_only_returns_own_sessions(self, client, headers_a, headers_b):
         # Both users get their own seeded data — sessions must not bleed across users
-        sessions_a = client.get("/sessions", headers=headers_a).json()
-        sessions_b = client.get("/sessions", headers=headers_b).json()
+        sessions_a = client.get("/sessions", headers=headers_a).json()["sessions"]
+        sessions_b = client.get("/sessions", headers=headers_b).json()["sessions"]
         ids_a = {s["id"] for s in sessions_a}
         ids_b = {s["id"] for s in sessions_b}
         assert ids_a.isdisjoint(ids_b), "User A and User B share session IDs — isolation broken"
 
     def test_list_sessions_default_limit_is_20(self, client, headers_a):
         resp = client.get("/sessions", headers=headers_a)
-        assert len(resp.json()) <= 20
+        assert len(resp.json()["sessions"]) <= 20
 
     def test_list_sessions_custom_limit(self, client, headers_a):
         resp = client.get("/sessions?limit=5", headers=headers_a)
-        assert len(resp.json()) <= 5
+        assert len(resp.json()["sessions"]) <= 5
 
     def test_list_sessions_all_have_complete_status(self, client, headers_a):
-        sessions = client.get("/sessions", headers=headers_a).json()
+        sessions = client.get("/sessions", headers=headers_a).json()["sessions"]
         for s in sessions:
             assert s["status"] == "complete"
 
@@ -58,7 +60,9 @@ class TestStartSession:
 
     def test_start_session_creates_unique_ids(self, client, headers_a):
         id1 = client.post("/sessions", headers=headers_a).json()["session_id"]
+        client.post(f"/sessions/{id1}/end", headers=headers_a)
         id2 = client.post("/sessions", headers=headers_a).json()["session_id"]
+        client.post(f"/sessions/{id2}/end", headers=headers_a)
         assert id1 != id2
 
 
@@ -96,7 +100,7 @@ class TestEndSession:
     def test_ended_session_appears_in_list(self, client, headers_a):
         session_id = client.post("/sessions", headers=headers_a).json()["session_id"]
         client.post(f"/sessions/{session_id}/end", headers=headers_a)
-        sessions = client.get("/sessions", headers=headers_a).json()
+        sessions = client.get("/sessions", headers=headers_a).json()["sessions"]
         ids = [s["id"] for s in sessions]
         assert session_id in ids
 

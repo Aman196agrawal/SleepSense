@@ -102,14 +102,22 @@ def list_goals(
         .order_by(UserGoal.created_at.desc())
         .all()
     )
-    # Refresh current values
-    for goal in goals:
-        if not goal.is_achieved:
-            goal.current_value = _compute_current(goal, db, user_id)
-            if goal.current_value >= goal.target_value:
-                goal.is_achieved = True
-    db.commit()
+    # Return stored values only — progress is refreshed by update_goals_for_user()
+    # which is called at session end so GET remains a safe, read-only operation.
     return [_goal_dict(g) for g in goals]
+
+
+def update_goals_for_user(user_id: str, db: Session) -> None:
+    """Recompute and persist goal progress. Called after session end."""
+    goals = db.query(UserGoal).filter(
+        UserGoal.user_id == user_id, UserGoal.is_achieved == False
+    ).all()
+    for goal in goals:
+        goal.current_value = _compute_current(goal, db, user_id)
+        if goal.current_value >= goal.target_value:
+            goal.is_achieved = True
+    if goals:
+        db.commit()
 
 
 @router.delete("/{goal_id}", status_code=204)

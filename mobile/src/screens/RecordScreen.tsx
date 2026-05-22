@@ -171,7 +171,18 @@ export default function RecordScreen({ navigation }: any) {
       if (!privacyMode) {
         const res = await AnalyticsAPI.startSession();
         sessionIdRef.current = res.data.session_id;
-        sleepSenseWS.connect();
+        await sleepSenseWS.connect();
+        sleepSenseWS.on('chunk.analyzed', (data) => {
+          if (data?.chunk_index !== undefined) setChunkCount(data.chunk_index + 1);
+        });
+        sleepSenseWS.on('session.complete', (data) => {
+          if (data?.sleep_quality_score !== undefined) {
+            Alert.alert(
+              `Session Complete 🌙`,
+              `Sleep score: ${data.sleep_quality_score} (${data.sleep_quality_grade})\nSnoring: ${data.snoring_percentage}%`,
+            );
+          }
+        });
       } else {
         sessionIdRef.current = null; // local-only session
       }
