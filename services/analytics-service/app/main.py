@@ -1,4 +1,6 @@
 import logging
+import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import engine, Base, get_db
+from app.database import engine, Base, SessionLocal, get_db
 from app.models import SleepSession, TimelineBucket, SessionInsight, LifestyleLog, UserGoal, SeededUser
 from app.routes import sessions, analytics, insights, lifestyle, goals
 from app.routes.ws import router as ws_router
@@ -18,7 +20,23 @@ logging.basicConfig(
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="SleepSense — Analytics Service", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.kafka_consumer import run_consumer
+    from app.kafka_client import emit
+
+    t = threading.Thread(
+        target=run_consumer,
+        args=(SessionLocal, emit),
+        daemon=True,
+        name="analytics-kafka-consumer",
+    )
+    t.start()
+    yield
+
+
+app = FastAPI(title="SleepSense — Analytics Service", version="1.0.0", lifespan=lifespan)
 
 _origins = [o.strip() for o in settings.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
 _wildcard = _origins == ["*"]

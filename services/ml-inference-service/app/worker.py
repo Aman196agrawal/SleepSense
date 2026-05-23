@@ -13,6 +13,7 @@ from app.aggregator import aggregate
 from app.classifier import SnoreClassifier
 from app.features import extract_features
 from app.preprocessing import preprocess_chunk
+from app.redis_client import get_inference_cache, set_inference_cache
 from app.regressor import IntensityRegressor
 
 _logger = logging.getLogger(__name__)
@@ -64,8 +65,13 @@ def process_chunk(
     for i, (cls, win) in enumerate(zip(classifications, audio_windows)):
         intensity = 0.0
         if cls["dominant_class"] == "snoring":
-            feats     = extract_features(win)
-            intensity = regressor.predict(feats)
+            feats  = extract_features(win)
+            cached = get_inference_cache(feats)
+            if cached is not None:
+                intensity = cached
+            else:
+                intensity = regressor.predict(feats)
+                set_inference_cache(feats, intensity)
         window_results.append({
             "start_sec":  round(i * HOP_SECS, 1),
             "end_sec":    round(i * HOP_SECS + WINDOW_SECS, 1),

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     # Kafka — async event bus
     KAFKA_BOOTSTRAP_SERVERS: str = ""  # e.g. "kafka:9092"
+    KAFKA_GROUP_ID:          str = "analytics-consumer-group"
 
     # S3 / MinIO — audio file storage (used for pre-signed playback URLs, FR-VIS-002)
     S3_BUCKET: str = ""                 # blank → audio playback unavailable

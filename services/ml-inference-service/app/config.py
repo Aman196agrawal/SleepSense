@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     KAFKA_INPUT_TOPIC:       str = "audio.chunk.uploaded"
     KAFKA_OUTPUT_TOPIC:      str = "analysis.complete"
 
+    # Redis — inference result cache
+    REDIS_URL: str = ""
+
     # S3 / MinIO
     S3_BUCKET:       str = "sleepsense-audio-dev"
     S3_ENDPOINT_URL: str = ""
