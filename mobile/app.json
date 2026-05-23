@@ -28,6 +28,7 @@
       }
     },
     "plugins": [
+      "./plugins/withAndroidForegroundAudio",
       "expo-web-browser",
       [
         "expo-audio",

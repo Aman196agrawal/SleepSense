@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Platform, AppState, AppStateStatus } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,10 @@ import { Colors } from '../theme/colors';
 import * as AnalyticsAPI from '../api/analytics.api';
 import * as IngestionAPI from '../api/ingestion.api';
 import { sleepSenseWS } from '../api/ws';
+import {
+  startForegroundAudioNotification,
+  stopForegroundAudioNotification,
+} from '../utils/foregroundService';
 
 // expo-audio metering: 0 dB = max, -160 dB = silence. Map [-60, -5] → [0, 100].
 // NOTE: this is loudness-based heuristic detection. The CNN classifier
@@ -59,6 +63,7 @@ export default function RecordScreen({ navigation }: any) {
   const meterTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const stoppingRef      = useRef(false);   // true while stopRecording is executing
   const chunkBusyRef     = useRef(false);   // true while recorder is being cycled for a chunk
+  const appStateRef      = useRef<AppStateStatus>(AppState.currentState);
   const statsRef         = useRef<{ intensities: number[]; classes: string[]; events: number }>({
     intensities: [], classes: [], events: 0,
   });
@@ -101,7 +106,11 @@ export default function RecordScreen({ navigation }: any) {
 
   // Cleanup on unmount: kill any in-flight timers / recording.
   useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      appStateRef.current = next;
+    });
     return () => {
+      sub.remove();
       if (tickTimerRef.current)  clearInterval(tickTimerRef.current);
       if (meterTimerRef.current) clearInterval(meterTimerRef.current);
     };
@@ -229,6 +238,12 @@ export default function RecordScreen({ navigation }: any) {
       await recorder.prepareToRecordAsync();
       recorder.record();
 
+      // Android foreground service: post a persistent notification so the OS
+      // does not kill the audio process when the app moves to the background.
+      startForegroundAudioNotification().catch(err =>
+        console.warn('foreground notification start failed', err)
+      );
+
       meterTimerRef.current = setInterval(pollMeter, METER_POLL_MS);
 
       tickTimerRef.current = setInterval(async () => {
@@ -293,6 +308,11 @@ export default function RecordScreen({ navigation }: any) {
         console.warn('reset audio mode failed', err);
       }
     }
+
+    // Dismiss the foreground service notification now that recording has stopped.
+    stopForegroundAudioNotification().catch(err =>
+      console.warn('foreground notification stop failed', err)
+    );
 
     sleepSenseWS.disconnect();
     stoppingRef.current  = false;
