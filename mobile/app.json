@@ -29,6 +29,7 @@
     },
     "plugins": [
       "./plugins/withAndroidForegroundAudio",
+      "react-native-fast-tflite",
       "expo-web-browser",
       [
         "expo-audio",

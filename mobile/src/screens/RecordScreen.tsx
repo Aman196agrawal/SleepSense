@@ -17,6 +17,7 @@ import {
   startForegroundAudioNotification,
   stopForegroundAudioNotification,
 } from '../utils/foregroundService';
+import { onDeviceClassifier } from '../ml/OnDeviceClassifier';
 
 // expo-audio metering: 0 dB = max, -160 dB = silence. Map [-60, -5] → [0, 100].
 // NOTE: this is loudness-based heuristic detection. The CNN classifier
@@ -64,6 +65,8 @@ export default function RecordScreen({ navigation }: any) {
   const stoppingRef      = useRef(false);   // true while stopRecording is executing
   const chunkBusyRef     = useRef(false);   // true while recorder is being cycled for a chunk
   const appStateRef      = useRef<AppStateStatus>(AppState.currentState);
+  // Rolling window of dBFS readings fed to the on-device TFLite classifier
+  const meteringHistRef  = useRef<number[]>([]);
   const statsRef         = useRef<{ intensities: number[]; classes: string[]; events: number }>({
     intensities: [], classes: [], events: 0,
   });
@@ -115,6 +118,14 @@ export default function RecordScreen({ navigation }: any) {
       if (meterTimerRef.current) clearInterval(meterTimerRef.current);
     };
   }, []);
+
+  // Pre-load the TFLite model as soon as Privacy Mode is enabled so it is
+  // ready before the user starts recording.
+  useEffect(() => {
+    if (privacyMode && !onDeviceClassifier.ready) {
+      onDeviceClassifier.load();
+    }
+  }, [privacyMode]);
 
   // Upload current chunk: JSON stats to analytics-service + binary audio to ingestion-service.
   // Binary upload stops and restarts the recorder to capture a discrete 30s file.
@@ -175,12 +186,37 @@ export default function RecordScreen({ navigation }: any) {
   }, [recorder]);
 
   // Poll the recorder's current metering value and update live UI state.
+  // In Privacy Mode, the on-device TFLite classifier is used instead of the
+  // loudness heuristic so snore detection runs without any cloud upload.
   const pollMeter = useCallback(() => {
-    // `recorder.currentMetering` is set by expo-audio when isMeteringEnabled
-    // is true. Missing on web / unsupported devices → treat as silence.
     const db  = (recorder as any).currentMetering ?? DB_FLOOR;
     const lvl = dbToIntensity(db);
-    const info = classify(lvl);
+
+    // Keep a rolling metering history for the on-device classifier
+    const hist = meteringHistRef.current;
+    hist.push(db);
+    if (hist.length > 128) hist.shift();
+
+    let info: SoundInfo;
+    if (privacyModeRef.current && onDeviceClassifier.ready) {
+      const result = onDeviceClassifier.classifyFromMetering(hist);
+      const colorMap: Record<string, string> = {
+        snoring:   Colors.danger,
+        breathing: Colors.secondary,
+        silence:   Colors.textMuted,
+        ambient:   Colors.textMuted,
+      };
+      info = {
+        label: result.dominantClass === 'snoring'   ? 'Snoring 😤'
+             : result.dominantClass === 'breathing' ? 'Breathing 💨'
+             : result.dominantClass === 'ambient'   ? 'Ambient 🔊'
+             : 'Silence 😴',
+        cls:   result.dominantClass === 'ambient' ? 'silence' : result.dominantClass,
+        color: colorMap[result.dominantClass] ?? Colors.textMuted,
+      };
+    } else {
+      info = classify(lvl);
+    }
 
     setIntensity(lvl);
     setSoundInfo(info);
@@ -227,9 +263,10 @@ export default function RecordScreen({ navigation }: any) {
       } else {
         sessionIdRef.current = null; // local-only session
       }
-      chunkIdxRef.current   = 0;
-      chunkTimerRef.current = 0;
-      statsRef.current = { intensities: [], classes: [], events: 0 };
+      chunkIdxRef.current    = 0;
+      chunkTimerRef.current  = 0;
+      statsRef.current       = { intensities: [], classes: [], events: 0 };
+      meteringHistRef.current = [];
 
       setElapsed(0);
       setChunkCount(0);
