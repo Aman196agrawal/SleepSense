@@ -7,17 +7,35 @@ from app.config import settings
 _bearer = HTTPBearer()
 
 
-def get_current_user_id(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
+def _decode(token: str) -> dict:
     try:
-        payload = jwt.decode(creds.credentials, settings.SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+def get_current_user_id(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
+    payload = _decode(creds.credentials)
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return user_id
+
+
+def require_role(*allowed: str):
+    def _check(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
+        payload = _decode(creds.credentials)
+        role = payload.get("role", "user")
+        if role not in allowed:
+            raise HTTPException(status_code=403, detail=f"Requires role: {', '.join(allowed)}")
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
         return user_id
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return _check
 
 
 def create_upload_token(session_id: str) -> str:

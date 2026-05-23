@@ -11,6 +11,7 @@ import {
 } from 'expo-audio';
 import { Colors } from '../theme/colors';
 import * as AnalyticsAPI from '../api/analytics.api';
+import * as IngestionAPI from '../api/ingestion.api';
 import { sleepSenseWS } from '../api/ws';
 
 // expo-audio metering: 0 dB = max, -160 dB = silence. Map [-60, -5] → [0, 100].
@@ -50,13 +51,15 @@ export default function RecordScreen({ navigation }: any) {
   });
 
   // Refs that survive re-renders during long sessions
-  const privacyModeRef  = useRef(false);
-  const sessionIdRef    = useRef<string | null>(null);
-  const chunkIdxRef     = useRef(0);
-  const chunkTimerRef   = useRef(0);
-  const tickTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
-  const meterTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-  const statsRef        = useRef<{ intensities: number[]; classes: string[]; events: number }>({
+  const privacyModeRef   = useRef(false);
+  const sessionIdRef     = useRef<string | null>(null);
+  const chunkIdxRef      = useRef(0);
+  const chunkTimerRef    = useRef(0);
+  const tickTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const meterTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stoppingRef      = useRef(false);   // true while stopRecording is executing
+  const chunkBusyRef     = useRef(false);   // true while recorder is being cycled for a chunk
+  const statsRef         = useRef<{ intensities: number[]; classes: string[]; events: number }>({
     intensities: [], classes: [], events: 0,
   });
 
@@ -104,34 +107,63 @@ export default function RecordScreen({ navigation }: any) {
     };
   }, []);
 
-  // Upload current chunk stats to backend, then reset accumulator
+  // Upload current chunk: JSON stats to analytics-service + binary audio to ingestion-service.
+  // Binary upload stops and restarts the recorder to capture a discrete 30s file.
   const flushChunk = useCallback(async () => {
+    if (chunkBusyRef.current) return; // previous chunk still uploading — skip this tick
+    const sid  = sessionIdRef.current;
+    const idx  = chunkIdxRef.current;
     const stats = statsRef.current;
-    if (stats.intensities.length === 0 || !sessionIdRef.current) return;
+    if (!sid || privacyModeRef.current) {
+      statsRef.current = { intensities: [], classes: [], events: 0 };
+      return;
+    }
 
-    const avgIntensity = stats.intensities.reduce((a, b) => a + b, 0) / stats.intensities.length;
-    const counts: Record<string, number> = {};
-    stats.classes.forEach(c => { counts[c] = (counts[c] ?? 0) + 1; });
-    const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'silence';
+    chunkBusyRef.current = true;
 
-    try {
-      await AnalyticsAPI.uploadChunk(sessionIdRef.current, {
-        chunk_index: chunkIdxRef.current,
+    // ── JSON stats → analytics-service (existing path, fire-and-forget) ──
+    if (stats.intensities.length > 0) {
+      const avgIntensity = stats.intensities.reduce((a, b) => a + b, 0) / stats.intensities.length;
+      const counts: Record<string, number> = {};
+      stats.classes.forEach(c => { counts[c] = (counts[c] ?? 0) + 1; });
+      const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'silence';
+      AnalyticsAPI.uploadChunk(sid, {
+        chunk_index: idx,
         avg_intensity: Math.round(avgIntensity),
         dominant_class: dominant,
         snore_event_count: stats.events,
-      });
+      }).catch(err => console.warn('stats upload failed', err));
+    }
+
+    // ── Binary audio → ingestion-service ──
+    // Stop recorder to get file URI, upload asynchronously, then restart.
+    try {
+      await recorder.stop();
+      const audioUri = (recorder as any).uri as string | undefined;
+      if (audioUri) {
+        IngestionAPI.uploadBinaryChunk(sid, audioUri, idx, CHUNK_SECONDS)
+          .catch(err => console.warn('binary upload failed', err));
+      }
     } catch (err) {
-      // Surfacing every transient network blip during an 8-hour recording
-      // would be noisier than useful — log to the JS console and rely on the
-      // session-end retry to fill in any missed chunks.
-      console.warn('chunk upload failed', err);
+      console.warn('recorder cycle failed', err);
     }
 
     chunkIdxRef.current += 1;
     statsRef.current = { intensities: [], classes: [], events: 0 };
     setChunkCount(c => c + 1);
-  }, []);
+
+    // Restart recorder for the next 30s segment (unless we're shutting down).
+    if (!stoppingRef.current) {
+      try {
+        await recorder.prepareToRecordAsync();
+        recorder.record();
+      } catch (err) {
+        console.warn('recorder restart failed', err);
+      }
+    }
+
+    chunkBusyRef.current = false;
+  }, [recorder]);
 
   // Poll the recorder's current metering value and update live UI state.
   const pollMeter = useCallback(() => {
@@ -215,23 +247,35 @@ export default function RecordScreen({ navigation }: any) {
   };
 
   const stopRecording = async () => {
+    stoppingRef.current = true;
     setPhase('stopping');
     if (tickTimerRef.current)  { clearInterval(tickTimerRef.current);  tickTimerRef.current  = null; }
     if (meterTimerRef.current) { clearInterval(meterTimerRef.current); meterTimerRef.current = null; }
 
-    try {
-      await recorder.stop();
-    } catch (err) {
-      console.warn('recorder.stop failed', err);
+    const sid = sessionIdRef.current;
+
+    // If a chunk flush is still running (stop/restart cycle), wait briefly for it.
+    if (chunkBusyRef.current) {
+      await new Promise(res => setTimeout(res, 1500));
     }
 
-    // Upload any remaining partial chunk
+    // Upload final partial chunk (binary + stats).
+    // After flushChunk, recorder is stopped (stoppingRef prevents restart).
     await flushChunk();
 
-    // Finalise session on backend
+    // If the recorder is still running (e.g. privacy mode), stop it now.
+    try { await recorder.stop(); } catch (_) {}
+
+    // Notify ingestion-service that the session has ended (non-blocking).
+    if (sid && !privacyModeRef.current) {
+      IngestionAPI.endSession(sid, { ended_at: new Date().toISOString() })
+        .catch(err => console.warn('ingestion endSession failed', err));
+    }
+
+    // Finalise session on analytics-service (source of truth for scores).
     try {
-      if (sessionIdRef.current) {
-        await AnalyticsAPI.endSession(sessionIdRef.current);
+      if (sid) {
+        await AnalyticsAPI.endSession(sid);
         Alert.alert('Session Saved! 🌙', 'Your sleep report is ready.', [
           { text: 'View Report', onPress: () => navigation.navigate('Home') },
           { text: 'OK' },
@@ -251,6 +295,8 @@ export default function RecordScreen({ navigation }: any) {
     }
 
     sleepSenseWS.disconnect();
+    stoppingRef.current  = false;
+    chunkBusyRef.current = false;
     sessionIdRef.current = null;
     setPhase('idle');
     setElapsed(0);

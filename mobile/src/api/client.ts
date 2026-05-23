@@ -21,8 +21,14 @@ export const ANALYTICS_URL =
   process.env.EXPO_PUBLIC_ANALYTICS_URL ??
   `http://${devHost}:8002`;
 
-export const authClient = axios.create({ baseURL: AUTH_URL, timeout: 10000 });
+export const INGESTION_URL =
+  extra.ingestionUrl ??
+  process.env.EXPO_PUBLIC_INGESTION_URL ??
+  `http://${devHost}:8003`;
+
+export const authClient      = axios.create({ baseURL: AUTH_URL,      timeout: 10000 });
 export const analyticsClient = axios.create({ baseURL: ANALYTICS_URL, timeout: 10000 });
+export const ingestionClient = axios.create({ baseURL: INGESTION_URL, timeout: 30000 });
 
 const attachToken = async (config: any) => {
   const token = await AsyncStorage.getItem('access_token');
@@ -32,3 +38,4 @@ const attachToken = async (config: any) => {
 
 analyticsClient.interceptors.request.use(attachToken);
 authClient.interceptors.request.use(attachToken);
+ingestionClient.interceptors.request.use(attachToken);

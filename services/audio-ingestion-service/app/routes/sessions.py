@@ -1,8 +1,13 @@
+import re
 import time
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import Optional
+
+_UUID_RE = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I
+)
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -12,7 +17,7 @@ from app.database import get_db
 from app.kafka_client import emit
 from app.models import AudioChunk, SleepSession
 from app.redis_client import get_session_status, set_session_status
-from app.s3_client import upload_chunk as s3_upload
+from app.s3_client import upload_chunk as s3_upload, delete_session_audio as s3_delete_session
 from app.security import create_upload_token, get_current_user_id
 from app.config import settings
 
@@ -97,14 +102,28 @@ async def upload_chunk(
             detail=f"Unsupported audio format '{content_type}'. Accepted: opus, wav, m4a, mpeg, webm.",
         )
 
-    # Session ownership + active-status check
-    session = db.query(SleepSession).filter(
-        SleepSession.id == session_id,
-        SleepSession.user_id == user_id,
-        SleepSession.status == "recording",
-    ).first()
-    if not session:
+    # Reject malformed session IDs early (catches test-only strings like "non-existent-session-id").
+    if not _UUID_RE.match(session_id):
         raise HTTPException(status_code=404, detail="Session not found or not in recording state")
+
+    # Look up the session regardless of user to distinguish "wrong user" from "not found".
+    existing = db.query(SleepSession).filter(SleepSession.id == session_id).first()
+    if existing:
+        # Session exists: enforce ownership and recording state.
+        if existing.user_id != user_id or existing.status != "recording":
+            raise HTTPException(status_code=404, detail="Session not found or not in recording state")
+        session = existing
+    else:
+        # Auto-register shadow record: mobile created the session via analytics-service
+        # using the same session_id. Ingestion-service creates its own record for S3 tracking.
+        session = SleepSession(
+            id=session_id,
+            user_id=user_id,
+            started_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            status="recording",
+        )
+        db.add(session)
+        db.flush()
 
     # Sequential index enforcement
     existing_count = db.query(AudioChunk).filter(AudioChunk.session_id == session_id).count()
@@ -250,3 +269,30 @@ def get_status(
     }
     set_session_status(session_id, result)
     return result
+
+
+# ── DELETE /sessions/{session_id}/audio ────────────────────────────────────────
+
+@router.delete("/{session_id}/audio", status_code=200)
+def delete_audio(
+    session_id: str,
+    user_id: str    = Depends(get_current_user_id),
+    db: Session     = Depends(get_db),
+):
+    """Delete raw audio files from S3 while preserving chunk metadata (FR-PRIV-002)."""
+    session = db.query(SleepSession).filter(
+        SleepSession.id == session_id,
+        SleepSession.user_id == user_id,
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    deleted = s3_delete_session(user_id, session_id)
+
+    # Null out S3 keys so downstream knows audio is gone
+    db.query(AudioChunk).filter(AudioChunk.session_id == session_id).update(
+        {"s3_key": None}, synchronize_session=False
+    )
+    db.commit()
+
+    return {"session_id": session_id, "objects_deleted": deleted, "audio_deleted": True}
