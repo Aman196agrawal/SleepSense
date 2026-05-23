@@ -20,6 +20,7 @@ class User(Base):
     height_cm     = Column(Float, nullable=True)
     timezone              = Column(String, default="Asia/Kolkata")
     bedtime_reminder_time = Column(String, nullable=True)
+    profile_image_url     = Column(String, nullable=True)
     is_active             = Column(Boolean, default=True)
     is_verified   = Column(Boolean, default=False)
     role          = Column(String, default="user")   # user | admin | researcher

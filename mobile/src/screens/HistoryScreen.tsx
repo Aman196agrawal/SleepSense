@@ -72,7 +72,13 @@ export default function HistoryScreen({ navigation }: any) {
         contentContainerStyle={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
-        <Text style={styles.heading}>Sleep History</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <Text style={styles.heading}>Sleep History</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Calendar')} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="calendar-outline" size={18} color={Colors.primary} />
+            <Text style={{ color: Colors.primary, fontSize: 13, fontWeight: '600' }}>Calendar</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Period selector */}
         <View style={styles.periodRow}>

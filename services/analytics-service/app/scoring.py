@@ -54,6 +54,62 @@ def compute_score(
     return round(max(0.0, min(100.0, raw)), 1)
 
 
+def compute_score_breakdown(
+    snore_ratio: float,
+    avg_intensity: float,
+    interruptions: int,
+    duration_min: int,
+) -> dict:
+    """Return per-factor penalty breakdown for FR-SCORE-002."""
+    snore_impact         = round(snore_ratio * 40, 1)
+    intensity_penalty    = round((avg_intensity / 100.0) * 25, 1)
+    interruption_penalty = round(interruptions * 2, 1)
+    gap_penalty          = round(max(0.0, (360 - duration_min) / 360.0 * 15), 1) if duration_min < 360 else 0.0
+    score                = compute_score(snore_ratio, avg_intensity, interruptions, duration_min)
+
+    snore_pct = round(snore_ratio * 100, 0)
+    duration_desc = (
+        f"Sleep was {duration_min} min (<6 hours), reducing score by {gap_penalty} points."
+        if gap_penalty > 0
+        else "Sleep duration was sufficient (≥6 hours)."
+    )
+
+    return {
+        "score": score,
+        "grade": grade(score),
+        "components": [
+            {
+                "factor": "snoring_ratio",
+                "label": "Snoring Proportion",
+                "penalty": snore_impact,
+                "max_penalty": 40,
+                "description": f"Snoring for {snore_pct:.0f}% of the night reduced your score by {snore_impact} points.",
+            },
+            {
+                "factor": "snoring_intensity",
+                "label": "Snoring Intensity",
+                "penalty": intensity_penalty,
+                "max_penalty": 25,
+                "description": f"Average snore intensity of {avg_intensity:.0f}/100 reduced your score by {intensity_penalty} points.",
+            },
+            {
+                "factor": "interruptions",
+                "label": "Snoring Events",
+                "penalty": interruption_penalty,
+                "max_penalty": None,
+                "description": f"{interruptions} snoring event(s) contributed {interruption_penalty} points of penalty.",
+            },
+            {
+                "factor": "duration",
+                "label": "Sleep Duration",
+                "penalty": gap_penalty,
+                "max_penalty": 15,
+                "description": duration_desc,
+            },
+        ],
+    }
+
+
 def make_timeline(
     session_id: str,
     duration_minutes: int,

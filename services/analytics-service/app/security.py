@@ -80,3 +80,16 @@ def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(bear
     if not _user_exists_in_auth_service(user_id, credentials.credentials):
         raise HTTPException(status_code=401, detail="User no longer exists")
     return user_id
+
+
+def require_role(*allowed: str):
+    """FastAPI dependency enforcing RBAC (SEC-003). Usage: Depends(require_role('admin'))"""
+    def _check(credentials: HTTPAuthorizationCredentials = Depends(bearer)) -> str:
+        payload = decode_token(credentials.credentials)
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        user_role = payload.get("role", "user")
+        if user_role not in allowed:
+            raise HTTPException(status_code=403, detail=f"Requires role: {', '.join(allowed)}")
+        return payload["sub"]
+    return _check

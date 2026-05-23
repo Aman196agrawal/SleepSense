@@ -19,7 +19,7 @@ from app.kafka_client import emit
 from app.models import SleepSession, TimelineBucket, SessionInsight
 from app.routes.ws import manager as ws_manager
 from app.routes.goals import update_goals_for_user
-from app.scoring import INSIGHT_TEMPLATES, compute_score, grade, make_timeline
+from app.scoring import INSIGHT_TEMPLATES, compute_score, compute_score_breakdown, grade, make_timeline
 from app.security import get_current_user_id
 from app.seed import seed_user
 
@@ -433,6 +433,71 @@ def get_session_status(
             pass
 
     return result
+
+
+@router.get("/{session_id}/score-breakdown")
+def score_breakdown(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Per-factor score explanation for FR-SCORE-002."""
+    session = db.query(SleepSession).filter(
+        SleepSession.id == session_id, SleepSession.user_id == user_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != "complete":
+        raise HTTPException(status_code=202, detail="Session analysis not complete yet")
+
+    snore_ratio   = (session.snoring_percentage or 0) / 100.0
+    avg_intensity = session.avg_snore_intensity or 0.0
+    interruptions = int((session.snore_events_per_hour or 0) * max((session.duration_minutes or 0) / 60, 0.1))
+    duration_min  = session.duration_minutes or 0
+
+    return compute_score_breakdown(snore_ratio, avg_intensity, interruptions, duration_min)
+
+
+@router.get("/{session_id}/audio-url/{chunk_index}")
+def audio_chunk_url(
+    session_id: str,
+    chunk_index: int,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Generate a 15-min pre-signed S3 URL for a specific audio chunk (FR-VIS-002).
+    Only available when the session was recorded via the full binary pipeline."""
+    session = db.query(SleepSession).filter(
+        SleepSession.id == session_id, SleepSession.user_id == user_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != "complete":
+        raise HTTPException(status_code=404, detail="Session not complete")
+
+    from app.config import settings as _s
+    if not _s.S3_BUCKET:
+        raise HTTPException(status_code=404, detail="Audio playback not available in privacy mode")
+
+    s3_key = f"{user_id}/{session_id}/chunk_{chunk_index:03d}.opus"
+    try:
+        import boto3
+        client = boto3.client(
+            "s3",
+            endpoint_url=_s.S3_ENDPOINT_URL or None,
+            aws_access_key_id=_s.S3_ACCESS_KEY or None,
+            aws_secret_access_key=_s.S3_SECRET_KEY or None,
+            region_name=_s.S3_REGION,
+        )
+        url = client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": _s.S3_BUCKET, "Key": s3_key},
+            ExpiresIn=900,  # 15 minutes
+        )
+        return {"url": url, "expires_in": 900, "chunk_index": chunk_index}
+    except Exception as exc:
+        _logger.warning("Pre-signed URL generation failed for %s: %s", s3_key, exc)
+        raise HTTPException(status_code=404, detail="Audio not available for this chunk")
 
 
 @router.delete("/{session_id}/audio", status_code=200)

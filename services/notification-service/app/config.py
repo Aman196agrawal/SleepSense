@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     SENDGRID_FROM_EMAIL: str = "noreply@sleepsense.app"
     SENDGRID_FROM_NAME: str = "SleepSense"
 
+    # Auth service internal URL — used for bedtime reminder lookups
+    AUTH_SERVICE_URL: str = "http://localhost:8001"
+
     # Kafka
     KAFKA_BOOTSTRAP_SERVERS: str = ""
     KAFKA_GROUP_ID: str = "notification-service"

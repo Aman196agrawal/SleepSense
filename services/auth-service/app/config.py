@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # Google OAuth2 — leave blank to skip audience validation in dev
     GOOGLE_CLIENT_ID: str = ""
 
+    # Apple Sign-In — set to your App ID (e.g. com.example.sleepsense) to enforce aud claim
+    APPLE_CLIENT_ID: str = ""
+
     # Base URL used in password-reset emails
     FRONTEND_URL: str = "http://localhost:3000"
 
@@ -28,6 +31,14 @@ class Settings(BaseSettings):
 
     # Analytics service internal URL — used to purge user data on account deletion
     ANALYTICS_SERVICE_URL: str = "http://localhost:8002"
+
+    # S3 / MinIO — avatar image storage
+    S3_BUCKET_ASSETS: str = ""          # blank → avatar upload unavailable
+    S3_ENDPOINT_URL: str = ""
+    S3_ACCESS_KEY: str = ""
+    S3_SECRET_KEY: str = ""
+    S3_REGION: str = "ap-south-1"
+    CDN_BASE_URL: str = ""              # if set, avatar URLs use this prefix instead of S3 endpoint
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

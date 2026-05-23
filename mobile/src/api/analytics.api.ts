@@ -47,3 +47,8 @@ export const getGoals    = ()            => analyticsClient.get('/goals');
 export const createGoal  = (data: { goal_type: string; target_value: number; target_date?: string }) =>
   analyticsClient.post('/goals', data);
 export const deleteGoal  = (id: string)  => analyticsClient.delete(`/goals/${id}`);
+
+export const getCalendar      = (days = 90) => analyticsClient.get(`/analytics/calendar?days=${days}`);
+export const getScoreBreakdown = (id: string) => analyticsClient.get(`/sessions/${id}/score-breakdown`);
+export const getAudioUrl       = (sessionId: string, chunkIndex: number) =>
+  analyticsClient.get(`/sessions/${sessionId}/audio-url/${chunkIndex}`);

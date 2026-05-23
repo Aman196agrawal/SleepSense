@@ -23,3 +23,21 @@ def get_current_user_id(
         return user_id
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def require_role(*allowed: str):
+    """FastAPI dependency enforcing RBAC (SEC-003). Usage: Depends(require_role('admin'))"""
+    def _check(creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
+        if not creds:
+            raise HTTPException(status_code=401, detail="Missing auth token")
+        try:
+            payload = jwt.decode(creds.credentials, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        except JWTError:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Wrong token type")
+        user_role = payload.get("role", "user")
+        if user_role not in allowed:
+            raise HTTPException(status_code=403, detail=f"Requires role: {', '.join(allowed)}")
+        return payload["sub"]
+    return _check

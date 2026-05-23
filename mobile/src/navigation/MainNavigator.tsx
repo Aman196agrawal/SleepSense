@@ -12,6 +12,7 @@ import SessionDetailScreen from '../screens/SessionDetailScreen';
 import LifestyleLogScreen  from '../screens/LifestyleLogScreen';
 import HealthProfileScreen from '../screens/HealthProfileScreen';
 import GoalsScreen        from '../screens/GoalsScreen';
+import CalendarScreen    from '../screens/CalendarScreen';
 
 // ── Stack param types ────────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ export type HomeStackParams = {
 export type HistoryStackParams = {
   HistoryMain:   undefined;
   SessionDetail: { sessionId: string };
+  Calendar:      undefined;
 };
 
 export type ProfileStackParams = {
@@ -63,6 +65,7 @@ function HistoryStack() {
     <HistoryStackNav_.Navigator screenOptions={{ headerShown: false }}>
       <HistoryStackNav_.Screen name="HistoryMain"   component={HistoryScreen} />
       <HistoryStackNav_.Screen name="SessionDetail" component={SessionDetailScreen} />
+      <HistoryStackNav_.Screen name="Calendar"      component={CalendarScreen} />
     </HistoryStackNav_.Navigator>
   );
 }

@@ -23,11 +23,12 @@ class Settings(BaseSettings):
     # Kafka — async event bus
     KAFKA_BOOTSTRAP_SERVERS: str = ""  # e.g. "kafka:9092"
 
-    # MinIO / S3 — audio file storage
-    MINIO_ENDPOINT: str = ""
-    MINIO_ACCESS_KEY: str = "minioadmin"
-    MINIO_SECRET_KEY: str = "minioadmin"
-    MINIO_BUCKET: str = "audio-chunks"
+    # S3 / MinIO — audio file storage (used for pre-signed playback URLs, FR-VIS-002)
+    S3_BUCKET: str = ""                 # blank → audio playback unavailable
+    S3_ENDPOINT_URL: str = ""           # blank = real AWS; set to MinIO URL for local dev
+    S3_ACCESS_KEY: str = ""
+    S3_SECRET_KEY: str = ""
+    S3_REGION: str = "ap-south-1"
 
     # Comma-separated origin allowlist for CORS. Use "*" only for dev.
     CORS_ALLOWED_ORIGINS: str = "http://localhost:8081,http://localhost:19006,http://localhost:3000"

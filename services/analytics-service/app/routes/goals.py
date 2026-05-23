@@ -109,15 +109,34 @@ def list_goals(
 
 def update_goals_for_user(user_id: str, db: Session) -> None:
     """Recompute and persist goal progress. Called after session end."""
+    from app.kafka_client import emit
     goals = db.query(UserGoal).filter(
         UserGoal.user_id == user_id, UserGoal.is_achieved == False
     ).all()
+    newly_achieved = []
     for goal in goals:
         goal.current_value = _compute_current(goal, db, user_id)
         if goal.current_value >= goal.target_value:
             goal.is_achieved = True
+            newly_achieved.append(goal)
     if goals:
         db.commit()
+
+    # Emit achievement badge notification for each newly completed goal (FR-NOTIF-004)
+    label_map = {"quality_score": "Sleep Quality Score", "recording_streak": "Recording Streak"}
+    for goal in newly_achieved:
+        label = label_map.get(goal.goal_type, goal.goal_type.replace("_", " ").title())
+        try:
+            emit("notification.send", {
+                "user_id": user_id,
+                "type": "achievement",
+                "title": "Goal achieved! \U0001f3c6",
+                "body": f"You reached your {label} goal of {goal.target_value:.0f}. Keep it up!",
+                "payload": {"goal_id": goal.id, "goal_type": goal.goal_type, "screen": "Goals"},
+                "channels": ["push", "in_app"],
+            })
+        except Exception:
+            pass  # Never block session completion because of a notification failure
 
 
 @router.delete("/{goal_id}", status_code=204)

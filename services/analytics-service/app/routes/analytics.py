@@ -167,6 +167,86 @@ def weekly_summary(
     }
 
 
+@router.get("/calendar")
+def calendar_heatmap(
+    days: int = 90,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Per-day session data for a GitHub-style calendar heatmap (FR-HIST-003)."""
+    seed_user(user_id, db)
+    from datetime import date as _date, timedelta as _td
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+
+    sessions = (
+        db.query(SleepSession)
+        .filter(
+            SleepSession.user_id == user_id,
+            SleepSession.status == "complete",
+            SleepSession.started_at >= since,
+        )
+        .all()
+    )
+
+    session_by_date = {}
+    for s in sessions:
+        d = s.started_at.strftime("%Y-%m-%d")
+        session_by_date[d] = {
+            "session_id": s.id,
+            "quality_score": s.sleep_quality_score,
+            "grade": s.sleep_quality_grade,
+            "snoring_percentage": s.snoring_percentage,
+            "duration_minutes": s.duration_minutes,
+        }
+
+    today = datetime.now(timezone.utc).date()
+    calendar = []
+    for i in range(days - 1, -1, -1):
+        d = today - timedelta(days=i)
+        date_str = d.strftime("%Y-%m-%d")
+        entry = session_by_date.get(date_str)
+        if entry:
+            score = entry["quality_score"]
+            color = _score_color(score)
+            calendar.append({
+                "date": date_str,
+                "has_session": True,
+                "quality_score": score,
+                "grade": entry["grade"],
+                "snoring_percentage": entry["snoring_percentage"],
+                "duration_minutes": entry["duration_minutes"],
+                "session_id": entry["session_id"],
+                "color": color,
+            })
+        else:
+            calendar.append({
+                "date": date_str,
+                "has_session": False,
+                "quality_score": None,
+                "grade": None,
+                "snoring_percentage": None,
+                "duration_minutes": None,
+                "session_id": None,
+                "color": "none",
+            })
+
+    return {"days": days, "calendar": calendar}
+
+
+def _score_color(score) -> str:
+    if score is None:
+        return "none"
+    if score >= 90:
+        return "excellent"
+    if score >= 75:
+        return "good"
+    if score >= 60:
+        return "fair"
+    if score >= 40:
+        return "poor"
+    return "critical"
+
+
 @router.get("/streak")
 def get_streak(
     user_id: str = Depends(get_current_user_id),

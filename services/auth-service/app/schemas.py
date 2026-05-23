@@ -50,6 +50,7 @@ class UserResponse(BaseModel):
     height_cm: Optional[float]
     timezone: str
     bedtime_reminder_time: Optional[str] = None
+    profile_image_url: Optional[str] = None
     is_verified: bool = False
     role: str = "user"
     created_at: datetime

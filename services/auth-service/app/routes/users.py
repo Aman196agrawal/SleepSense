@@ -1,7 +1,8 @@
+import io
 import json as _json
 import logging
 import urllib.request
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, UserHealthProfile, RefreshToken, SocialAccount, PasswordResetToken
@@ -12,6 +13,9 @@ from app.schemas import (
 from app.security import get_current_user_id
 from app.redis_client import get_redis
 from app.config import settings
+
+_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_MAX_AVATAR_BYTES = 5 * 1024 * 1024  # 5 MB
 
 _logger = logging.getLogger(__name__)
 
@@ -88,6 +92,72 @@ def put_health_profile(
     db.commit()
     db.refresh(profile)
     return _profile_to_response(profile)
+
+
+@router.post("/me/avatar", response_model=UserResponse)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Upload a profile avatar to S3 and store the CDN URL (FR-AUTH-008)."""
+    if not settings.S3_BUCKET_ASSETS:
+        raise HTTPException(status_code=503, detail="Avatar upload not configured")
+
+    content_type = file.content_type or ""
+    if content_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WebP images accepted")
+
+    data = await file.read()
+    if len(data) > _MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=413, detail="Image exceeds 5 MB limit")
+
+    # Always store as .jpg for consistency; use user_id as stable key so each
+    # upload overwrites the previous avatar rather than accumulating orphan files.
+    s3_key = f"profiles/{user_id}/avatar.jpg"
+    try:
+        import boto3
+        client = boto3.client(
+            "s3",
+            endpoint_url=settings.S3_ENDPOINT_URL or None,
+            aws_access_key_id=settings.S3_ACCESS_KEY or None,
+            aws_secret_access_key=settings.S3_SECRET_KEY or None,
+            region_name=settings.S3_REGION,
+        )
+        client.upload_fileobj(
+            io.BytesIO(data),
+            settings.S3_BUCKET_ASSETS,
+            s3_key,
+            ExtraArgs={"ContentType": "image/jpeg"},
+        )
+    except Exception as exc:
+        _logger.error("Avatar S3 upload failed for user %s: %s", user_id, exc)
+        raise HTTPException(status_code=502, detail="Upload failed — please try again")
+
+    if settings.CDN_BASE_URL:
+        image_url = f"{settings.CDN_BASE_URL.rstrip('/')}/{s3_key}"
+    else:
+        base = settings.S3_ENDPOINT_URL or f"https://{settings.S3_BUCKET_ASSETS}.s3.{settings.S3_REGION}.amazonaws.com"
+        image_url = f"{base.rstrip('/')}/{s3_key}"
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.profile_image_url = image_url
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.get("/internal/with-reminder/{hhmm}", include_in_schema=False)
+def users_with_reminder(hhmm: str, db: Session = Depends(get_db)):
+    """Internal endpoint used by notification-service to send bedtime reminders (FR-GOAL-001).
+    Returns minimal user info for all users whose bedtime_reminder_time matches HH:MM."""
+    users = db.query(User).filter(
+        User.bedtime_reminder_time == hhmm,
+        User.is_active == True,
+    ).all()
+    return [{"id": u.id, "email": u.email} for u in users]
 
 
 @router.delete("/me", status_code=204)

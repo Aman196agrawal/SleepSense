@@ -335,28 +335,74 @@ def social_google(body: SocialLoginRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/social/apple", response_model=TokenResponse)
-def social_apple(body: SocialLoginRequest, db: Session = Depends(get_db)):
-    """Apple Sign-In.
+def _verify_apple_token(id_token: str) -> dict:
+    """Validate an Apple identity token (RS256) against Apple's public JWK set.
 
-    Decodes the Apple identity token payload to extract `sub` (Apple user ID)
-    and `email`. In production, validate the RS256 JWT signature against Apple's
-    public JWK set from https://appleid.apple.com/auth/keys. The sample build
-    trusts the decoded payload (acceptable for dev; add jose/cryptography-based
-    verification before App Store submission).
+    Fetches https://appleid.apple.com/auth/keys, picks the matching key by `kid`,
+    and verifies the JWT signature + standard claims (iss, aud, exp).
+    Falls back to unsigned decode only when python-jose lacks RSA support and
+    APPLE_CLIENT_ID is not configured (acceptable for local dev only).
     """
+    APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys"
+    APPLE_ISSUER   = "https://appleid.apple.com"
+
+    # Decode header to get kid
     import base64 as _b64
     try:
-        parts = body.id_token.split('.')
+        parts = id_token.split('.')
         if len(parts) != 3:
-            raise ValueError("bad format")
-        padded = parts[1] + '=' * (4 - len(parts[1]) % 4)
-        claims = _json.loads(_b64.urlsafe_b64decode(padded))
+            raise ValueError("bad jwt format")
+        _pad = lambda s: s + '=' * (4 - len(s) % 4)
+        header = _json.loads(_b64.urlsafe_b64decode(_pad(parts[0])))
+        kid    = header.get("kid", "")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Malformed Apple identity token")
+
+    # Fetch Apple's public JWK set
+    try:
+        with urllib.request.urlopen(APPLE_JWKS_URL, timeout=5) as resp:
+            jwks = _json.loads(resp.read())
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not fetch Apple public keys")
+
+    # Find matching key
+    jwk = next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
+    if not jwk:
+        raise HTTPException(status_code=401, detail="Apple key not found for this token")
+
+    # Verify using python-jose RSA support
+    try:
+        from jose import jwk as _jwk, jwt as _jwt
+        from jose.utils import base64url_decode
+        public_key = _jwk.construct(jwk)
+        options = {"verify_aud": bool(settings.APPLE_CLIENT_ID), "verify_iss": True}
+        audience  = settings.APPLE_CLIENT_ID if settings.APPLE_CLIENT_ID else None
+        claims = _jwt.decode(
+            id_token,
+            public_key,
+            algorithms=["RS256"],
+            audience=audience,
+            issuer=APPLE_ISSUER,
+            options=options,
+        )
+        return claims
+    except Exception as exc:
+        _logger.warning("Apple token verification failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid Apple identity token")
+
+
+@router.post("/social/apple", response_model=TokenResponse)
+def social_apple(body: SocialLoginRequest, db: Session = Depends(get_db)):
+    """Apple Sign-In with RS256 signature verification against Apple's JWK set."""
+    try:
+        claims = _verify_apple_token(body.id_token)
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid Apple identity token")
 
     apple_uid = claims.get("sub", "")
-    email = claims.get("email", "")
+    email     = claims.get("email", "")
     if not apple_uid:
         raise HTTPException(status_code=401, detail="Incomplete Apple token payload")
 
