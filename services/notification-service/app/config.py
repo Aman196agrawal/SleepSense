@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     # Auth service internal URL — used for bedtime reminder lookups
     AUTH_SERVICE_URL: str = "http://localhost:8001"
 
+    # Analytics service internal URL — used for recent score lookups
+    ANALYTICS_SERVICE_URL: str = "http://analytics-service:8002"
+
+    # Shared secret for internal service-to-service calls
+    INTERNAL_API_SECRET: str = ""
+
     # Kafka
     KAFKA_BOOTSTRAP_SERVERS: str = ""
     KAFKA_GROUP_ID: str = "notification-service"

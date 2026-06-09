@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from app.database import get_db
 from app.models import LifestyleLog, SleepSession
 from app.security import get_current_user_id
@@ -19,6 +19,15 @@ class LifestyleLogCreate(BaseModel):
     stress_level: int      = Field(default=3, ge=1, le=5)
     sleep_aid_used: bool   = False
     notes: Optional[str]   = None
+
+    @field_validator('logged_date')
+    @classmethod
+    def validate_date_format(cls, v: str) -> str:
+        try:
+            datetime.strptime(v, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("logged_date must be in YYYY-MM-DD format")
+        return v
 
 
 @router.post("", status_code=201)
@@ -60,14 +69,25 @@ def log_lifestyle(
 
 @router.get("")
 def get_logs(
-    days: int = 14,
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
+    days: int = Query(14),
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    since = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).strftime("%Y-%m-%d")
+    if from_date and to_date:
+        since = from_date
+        until = to_date
+    else:
+        since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+        until = datetime.utcnow().strftime("%Y-%m-%d")
     logs = (
         db.query(LifestyleLog)
-        .filter(LifestyleLog.user_id == user_id, LifestyleLog.logged_date >= since)
+        .filter(
+            LifestyleLog.user_id == user_id,
+            LifestyleLog.logged_date >= since,
+            LifestyleLog.logged_date <= until,
+        )
         .order_by(LifestyleLog.logged_date.desc())
         .all()
     )

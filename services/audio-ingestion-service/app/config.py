@@ -14,7 +14,10 @@ class Settings(BaseSettings):
     S3_REGION: str = "ap-south-1"
 
     # Kafka
-    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+    KAFKA_BOOTSTRAP_SERVERS: str = ""
+
+    # Shared secret for internal service-to-service calls
+    INTERNAL_API_SECRET: str = ""
 
     # Redis
     REDIS_URL: str = ""

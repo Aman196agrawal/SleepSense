@@ -85,8 +85,7 @@ def upload_chunk(
         snore_event_count=chunk.snore_event_count,
     )
     db.add(bucket)
-    session.total_chunks     = max(session.total_chunks or 0, chunk.chunk_index + 1)
-    session.processed_chunks = session.total_chunks
+    session.total_chunks = max(session.total_chunks or 0, chunk.chunk_index + 1)
     db.commit()
 
     # ── InfluxDB: write snore event time-series point ─────────────────────────
@@ -255,6 +254,16 @@ def end_session(
         "sleep_quality_score": session.sleep_quality_score,
         "snoring_percentage":  session.snoring_percentage,
         "duration_minutes":    session.duration_minutes,
+    })
+
+    # ── Kafka: emit insights.generate for insight-engine consumer ──────────────
+    emit("insights.generate", {
+        "user_id":        user_id,
+        "session_id":     session_id,
+        "sleep_score":    session.sleep_quality_score,
+        "snore_pct":      session.snoring_percentage,
+        "duration_min":   session.duration_minutes,
+        "sleep_position": None,  # insight-engine fetches from auth-service health profile
     })
 
     # ── WebSocket: notify connected clients that session is complete ───────────
@@ -448,7 +457,7 @@ def score_breakdown(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     if session.status != "complete":
-        raise HTTPException(status_code=202, detail="Session analysis not complete yet")
+        raise HTTPException(status_code=409, detail="Session analysis not yet complete")
 
     snore_ratio   = (session.snoring_percentage or 0) / 100.0
     avg_intensity = session.avg_snore_intensity or 0.0

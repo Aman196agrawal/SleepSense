@@ -29,11 +29,15 @@ export default function SessionDetailScreen({ route, navigation }: Props) {
     Promise.all([
       AnalyticsAPI.getSession(sessionId),
       AnalyticsAPI.getTimeline(sessionId),
-      AnalyticsAPI.getInsights(),
+      AnalyticsAPI.getInsights({ session_id: sessionId }),
     ]).then(([s, t, i]) => {
       setSession(s.data);
       setTimeline(t.data.buckets ?? []);
-      setInsights(i.data.filter((ins: any) => ins.session_id === sessionId).slice(0, 3));
+      setInsights(
+        i.data
+          .filter((ins: any) => !ins.session_id || ins.session_id === sessionId)
+          .slice(0, 3)
+      );
     }).catch(() => {}).finally(() => setLoading(false));
   }, [sessionId]);
 

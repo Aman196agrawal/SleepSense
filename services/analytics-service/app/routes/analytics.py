@@ -29,7 +29,7 @@ def get_timeline(
     )
     return {
         "session_id": session_id,
-        "bucket_size_minutes": 5,
+        "bucket_size_minutes": 0.5,
         "buckets": [
             {
                 "index": b.bucket_index,
@@ -79,11 +79,15 @@ def get_trends(
     avg_score = round(sum(scores) / len(scores), 1) if scores else 0
     avg_snore = round(sum(snore_pcts) / len(snore_pcts), 1) if snore_pcts else 0
 
-    mid = len(scores) // 2
-    first_half = sum(scores[:mid]) / max(len(scores[:mid]), 1)
-    second_half = sum(scores[mid:]) / max(len(scores[mid:]), 1)
-    diff = second_half - first_half
-    trend = "improving" if diff > 3 else "declining" if diff < -3 else "stable"
+    if len(scores) < 4:
+        trend = "insufficient_data"
+        diff = 0.0
+    else:
+        mid = len(scores) // 2
+        first_half = sum(scores[:mid]) / len(scores[:mid])
+        second_half = sum(scores[mid:]) / len(scores[mid:])
+        diff = second_half - first_half
+        trend = "improving" if diff > 3 else "declining" if diff < -3 else "stable"
 
     return {
         "period": period,
@@ -199,7 +203,7 @@ def calendar_heatmap(
             "duration_minutes": s.duration_minutes,
         }
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.utcnow().date()
     calendar = []
     for i in range(days - 1, -1, -1):
         d = today - timedelta(days=i)
@@ -266,14 +270,20 @@ def get_streak(
         reverse=True,
     )
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.utcnow().date()
+    yesterday = today - timedelta(days=1)
 
     current_streak = 0
-    for i, d in enumerate(dates):
-        if d == today - timedelta(days=i):
-            current_streak += 1
-        else:
-            break
+    if dates:
+        # streak starts from today or yesterday (user checks in the morning after recording at night)
+        start_offset = 0 if dates[0] == today else (1 if dates[0] == yesterday else None)
+        if start_offset is not None:
+            current_streak = 1
+            for i in range(1, len(dates)):
+                if (dates[i - 1] - dates[i]).days == 1:
+                    current_streak += 1
+                else:
+                    break
 
     longest_streak = 0
     if dates:

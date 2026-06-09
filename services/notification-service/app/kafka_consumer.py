@@ -55,15 +55,33 @@ def run_consumer(db_factory, dispatcher_fn):
 
 def _can_send_health_alert(user_id: str, db) -> bool:
     """Return True only if no health alert was sent in the last 7 days (FR-NOTIF-003)."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
     from app.models import Notification
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
+    cutoff = datetime.utcnow() - timedelta(days=7)
     recent = db.query(Notification).filter(
         Notification.user_id == user_id,
         Notification.type == "health_alert",
         Notification.created_at >= cutoff,
     ).first()
     return recent is None
+
+
+def _get_recent_scores(user_id: str, limit: int = 5) -> list:
+    """Fetch the most recent session sleep scores from the analytics-service."""
+    import urllib.request
+    import json
+    from app.config import settings
+    if not settings.ANALYTICS_SERVICE_URL:
+        return []
+    try:
+        url = f"{settings.ANALYTICS_SERVICE_URL.rstrip('/')}/internal/users/{user_id}/recent-scores?limit={limit}"
+        req = urllib.request.Request(url)
+        if settings.INTERNAL_API_SECRET:
+            req.add_header("X-Internal-Secret", settings.INTERNAL_API_SECRET)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read()).get("scores", [])
+    except Exception:
+        return []
 
 
 def _handle_session_ended(payload: dict, db, dispatcher_fn):
@@ -92,18 +110,21 @@ def _handle_session_ended(payload: dict, db, dispatcher_fn):
     )
     _logger.info("sleep_report_ready sent for session %s", session_id)
 
-    # Health alert: fire at most once per 7 days when CHRONIC_SNORING is detected
-    if score is not None and score < 50 and _can_send_health_alert(user_id, db):
-        dispatcher_fn(
-            user_id=user_id,
-            notif_type="health_alert",
-            title="Recurring poor sleep detected",
-            body="5+ consecutive nights of poor sleep detected. Consider consulting a sleep specialist.",
-            payload={"screen": "Insights"},
-            channels=["push", "in_app"],
-            db=db,
-        )
-        _logger.info("health_alert sent for user %s", user_id)
+    # Health alert: fire only after 5 consecutive nights with score < 60 (FR-NOTIF-003)
+    if score is not None and score < 60 and _can_send_health_alert(user_id, db):
+        recent_scores = _get_recent_scores(user_id, limit=4)  # get 4 prior; combine with current = 5
+        all_scores = [score] + recent_scores
+        if len(all_scores) >= 5 and all(s < 60 for s in all_scores[:5]):
+            dispatcher_fn(
+                user_id=user_id,
+                notif_type="health_alert",
+                title="Recurring poor sleep detected",
+                body="5 consecutive nights of poor sleep detected. Consider consulting a sleep specialist.",
+                payload={"screen": "Insights"},
+                channels=["push", "in_app"],
+                db=db,
+            )
+            _logger.info("health_alert sent for user %s (5-night threshold met)", user_id)
 
 
 def _handle_notification_send(payload: dict, db, dispatcher_fn):

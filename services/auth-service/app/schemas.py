@@ -1,7 +1,7 @@
 import re
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 from typing import Optional, List, Literal
-from datetime import datetime
+from datetime import datetime, date
 
 
 def _validate_password_strength(v: str) -> str:
@@ -51,6 +51,8 @@ class UserResponse(BaseModel):
     timezone: str
     bedtime_reminder_time: Optional[str] = None
     profile_image_url: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    gender: Optional[str] = None
     is_verified: bool = False
     role: str = "user"
     created_at: datetime
@@ -63,6 +65,8 @@ class UpdateProfileRequest(BaseModel):
     height_cm: Optional[float] = Field(default=None, ge=0, le=300)
     timezone: Optional[str] = None
     bedtime_reminder_time: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    gender: Optional[str] = None
 
 class HealthProfileRequest(BaseModel):
     sleep_position: Optional[Literal["back", "side", "stomach"]] = None

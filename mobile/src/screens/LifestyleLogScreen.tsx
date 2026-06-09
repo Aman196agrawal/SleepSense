@@ -220,7 +220,7 @@ export default function LifestyleLogScreen() {
           </Row>
 
           <Row icon="wine-outline" iconColor={Colors.danger} label="Alcohol">
-            <Stepper value={alcohol} min={0} max={10} step={1} onChange={v => setAlcohol(v)} unit="units" />
+            <Stepper value={alcohol} min={0} max={20} step={1} onChange={v => setAlcohol(v)} unit="units" />
           </Row>
 
           <Row icon="barbell-outline" iconColor={Colors.secondary} label="Exercise">

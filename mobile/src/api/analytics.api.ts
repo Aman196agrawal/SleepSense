@@ -23,7 +23,7 @@ export const getTrends        = (period = '30d') => analyticsClient.get(`/analyt
 export const getWeeklySummary = ()            => analyticsClient.get('/analytics/weekly-summary');
 export const getStreak        = ()            => analyticsClient.get('/analytics/streak');
 
-export const getInsights      = ()            => analyticsClient.get('/insights');
+export const getInsights      = (params?: { session_id?: string }) => analyticsClient.get('/insights', { params });
 export const markInsightRead  = (id: string)  => analyticsClient.patch(`/insights/${id}/read`);
 
 export const uploadChunk = (

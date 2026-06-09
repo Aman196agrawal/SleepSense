@@ -17,7 +17,9 @@
         "RECORD_AUDIO",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MICROPHONE",
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "POST_NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED"
       ],
       "package": "com.anonymous.sleepsense"
     },

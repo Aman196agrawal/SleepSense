@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 import time
 import secrets
@@ -6,6 +7,7 @@ import logging
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -25,6 +27,11 @@ from app.redis_client import get_redis
 
 router = APIRouter()
 _logger = logging.getLogger(__name__)
+
+
+def _rt_key(token: str) -> str:
+    """Return the Redis key for a refresh token — stored as SHA-256 hash (SEC-014)."""
+    return f"rt:{hashlib.sha256(token.encode()).hexdigest()}"
 
 
 def _send_email(to: str, subject: str, html: str) -> None:
@@ -75,7 +82,7 @@ def _store_refresh_token(token: str, user_id: str, db: Session) -> None:
     r = get_redis()
     if r:
         try:
-            r.setex(f"rt:{token}", settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400, user_id)
+            r.setex(_rt_key(token), settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400, user_id)
             return
         except Exception:
             _logger.warning("Redis store failed — falling back to DB", exc_info=True)
@@ -107,7 +114,7 @@ def _consume_refresh_token(token: str, db: Session) -> str:
     r = get_redis()
     if r:
         try:
-            user_id = r.eval(_ATOMIC_GETDEL, 1, f"rt:{token}")
+            user_id = r.eval(_ATOMIC_GETDEL, 1, _rt_key(token))
             if user_id:
                 return user_id
             # Redis is up but the token isn't there — could be expired/revoked,
@@ -122,7 +129,7 @@ def _revoke_refresh_token(token: str, db: Session) -> None:
     r = get_redis()
     if r:
         try:
-            r.delete(f"rt:{token}")
+            r.delete(_rt_key(token))
         except Exception:
             _logger.warning("Redis revoke failed — falling through to DB", exc_info=True)
     rt = db.query(RefreshToken).filter(RefreshToken.token == token).first()
@@ -136,16 +143,16 @@ def _revoke_refresh_token(token: str, db: Session) -> None:
 _rl_store: dict[str, list[float]] = {}  # ip → list of request timestamps (in-memory fallback)
 
 
-def _check_rate_limit(ip: str, action: str = "login") -> None:
+def _check_rate_limit(ip: str, action: str = "login", limit: int = 10, window: int = 900) -> None:
     r = get_redis()
     if r:
         try:
             key = f"ratelimit:{action}:{ip}"
             count = r.incr(key)
             if count == 1:
-                r.expire(key, 900)  # 15 minutes
-            if count > 10:
-                raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+                r.expire(key, window)
+            if count > limit:
+                raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
             return
         except HTTPException:
             raise
@@ -153,20 +160,19 @@ def _check_rate_limit(ip: str, action: str = "login") -> None:
             _logger.warning("Redis rate-limit check failed — falling back to in-memory", exc_info=True)
 
     now = time.time()
-    window = 900.0
     store_key = f"{action}:{ip}"
     timestamps = [t for t in _rl_store.get(store_key, []) if now - t < window]
     timestamps.append(now)
     _rl_store[store_key] = timestamps
-    if len(timestamps) > 10:
-        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+    if len(timestamps) > limit:
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
 
 
 # ── Google OAuth2 token verification ──────────────────────────────────────────
 
 def _verify_google_token(id_token: str) -> dict:
     """Validate a Google ID token via Google's public tokeninfo endpoint."""
-    url = f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
+    url = "https://oauth2.googleapis.com/tokeninfo?" + urlencode({"id_token": id_token})
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
             info = _json.loads(resp.read())
@@ -186,7 +192,7 @@ def _verify_google_token(id_token: str) -> dict:
 @router.post("/register", response_model=TokenResponse, status_code=201)
 def register(request: Request, body: RegisterRequest, db: Session = Depends(get_db)):
     ip = request.client.host if request.client else "unknown"
-    _check_rate_limit(ip, "register")
+    _check_rate_limit(ip, "register", limit=5, window=3600)
 
     if db.query(User).filter(User.email == body.email).first():
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -275,7 +281,9 @@ def refresh_token(body: RefreshRequest, db: Session = Depends(get_db)):
 
     user_id = _consume_refresh_token(body.refresh_token, db)
 
-    new_access  = create_access_token(user_id)
+    user = db.query(User).filter(User.id == user_id).first()
+    user_role = user.role if user else "user"
+    new_access  = create_access_token(user_id, role=user_role)
     new_refresh = create_refresh_token(user_id)
     _store_refresh_token(new_refresh, user_id, db)
 

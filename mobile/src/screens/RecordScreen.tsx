@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Platform, AppState, AppStateStatus, Vibration } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -126,6 +127,13 @@ export default function RecordScreen({ navigation }: Props) {
     };
   }, []);
 
+  // Load saved privacy mode preference on mount
+  useEffect(() => {
+    AsyncStorage.getItem('privacyMode').then(val => {
+      if (val === 'true') setPrivacyMode(true);
+    });
+  }, []);
+
   // Pre-load the TFLite model as soon as Privacy Mode is enabled so it is
   // ready before the user starts recording.
   useEffect(() => {
@@ -167,6 +175,9 @@ export default function RecordScreen({ navigation }: Props) {
     try {
       await recorder.stop();
       const audioUri = (recorder as any).uri as string | undefined;
+      if (!audioUri) {
+        console.warn('[RecordScreen] recorder.uri unavailable — binary chunk upload skipped');
+      }
       if (audioUri) {
         IngestionAPI.uploadBinaryChunk(sid, audioUri, idx, CHUNK_SECONDS)
           .catch(err => console.error('binary upload failed', err));
@@ -320,10 +331,14 @@ export default function RecordScreen({ navigation }: Props) {
 
     const sid = sessionIdRef.current;
 
-    // If a chunk flush is still running (stop/restart cycle), wait briefly for it.
-    if (chunkBusyRef.current) {
-      await new Promise(res => setTimeout(res, 1500));
-    }
+    // Wait for any in-progress chunk upload to finish before flushing the final chunk.
+    await new Promise<void>((resolve) => {
+      if (!chunkBusyRef.current) { resolve(); return; }
+      const check = setInterval(() => {
+        if (!chunkBusyRef.current) { clearInterval(check); resolve(); }
+      }, 100);
+      setTimeout(() => { clearInterval(check); resolve(); }, 30000); // 30 s safety cap
+    });
 
     // Upload final partial chunk (binary + stats).
     // After flushChunk, recorder is stopped (stoppingRef prevents restart).
@@ -516,7 +531,11 @@ export default function RecordScreen({ navigation }: Props) {
                   Privacy Mode {privacyMode ? 'ON — audio stays on device' : 'OFF'}
                 </Text>
                 <TouchableOpacity
-                  onPress={() => setPrivacyMode(p => !p)}
+                  onPress={() => {
+                    const next = !privacyMode;
+                    setPrivacyMode(next);
+                    AsyncStorage.setItem('privacyMode', next ? 'true' : 'false');
+                  }}
                   style={[styles.privacyToggle, privacyMode && styles.privacyToggleOn]}
                 >
                   <View style={[styles.privacyThumb, privacyMode && styles.privacyThumbOn]} />

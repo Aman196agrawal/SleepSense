@@ -1,10 +1,14 @@
+import json
 import logging
 import threading
 import time
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
+from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, init_db
 from app.dispatcher import dispatch
@@ -36,21 +40,38 @@ def _run_weekly_summary_job():
             _logger.error("Weekly summary job failed", exc_info=True)
 
 
+def _get_user_email(user_id: str) -> Optional[str]:
+    from app.config import settings as _s
+    if not _s.AUTH_SERVICE_URL or not _s.INTERNAL_API_SECRET:
+        return None
+    try:
+        req = urllib.request.Request(
+            f"{_s.AUTH_SERVICE_URL.rstrip('/')}/internal/users/{user_id}/email"
+        )
+        req.add_header("X-Internal-Secret", _s.INTERNAL_API_SECRET)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read()).get("email")
+    except Exception:
+        return None
+
+
 def _fire_weekly_summaries(db):
     """Dispatch a weekly summary notification to each user who has recent sessions."""
     from app.models import Notification
-    # Fetch distinct user_ids from notification log (proxy for active users)
     user_ids = [r[0] for r in db.query(Notification.user_id).distinct().all()]
     for uid in user_ids:
         try:
+            user_email = _get_user_email(uid)
+            channels = ["push", "in_app"] + (["email"] if user_email else [])
             dispatch(
                 user_id=uid,
                 notif_type="weekly_summary",
                 title="Your weekly sleep report is ready.",
                 body="Check your sleep trends and insights for the past week.",
                 payload={"screen": "History"},
-                channels=["push", "in_app"],
+                channels=channels,
                 db=db,
+                user_email=user_email,
             )
         except Exception:
             _logger.warning("Weekly summary dispatch failed for user %s", uid, exc_info=True)
@@ -73,12 +94,13 @@ def _run_bedtime_reminder_job():
             continue
         now_hhmm = datetime.now(timezone.utc).strftime("%H:%M")
         try:
-            import urllib.request
-            with urllib.request.urlopen(
-                f"{AUTH_SERVICE_URL.rstrip('/')}/internal/users/with-reminder/{now_hhmm}",
-                timeout=5,
-            ) as resp:
-                import json
+            from app.config import settings as _s2
+            req = urllib.request.Request(
+                f"{AUTH_SERVICE_URL.rstrip('/')}/internal/users/with-reminder/{now_hhmm}"
+            )
+            if _s2.INTERNAL_API_SECRET:
+                req.add_header("X-Internal-Secret", _s2.INTERNAL_API_SECRET)
+            with urllib.request.urlopen(req, timeout=5) as resp:
                 users = json.loads(resp.read())
         except Exception:
             continue  # auth-service unreachable — skip this minute
@@ -145,3 +167,27 @@ app.include_router(device_tokens.router,  prefix="/device-tokens",  tags=["Devic
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "notification-service"}
+
+
+def _get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@app.delete("/internal/users/{user_id}", include_in_schema=False)
+def purge_user_data(
+    user_id: str,
+    x_internal_secret: str = Header(..., alias="X-Internal-Secret"),
+    db: Session = Depends(_get_db),
+):
+    from app.config import settings as _s
+    from app.models import Notification, DeviceToken
+    if x_internal_secret != _s.INTERNAL_API_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    db.query(Notification).filter(Notification.user_id == user_id).delete()
+    db.query(DeviceToken).filter(DeviceToken.user_id == user_id).delete()
+    db.commit()
+    return {"deleted": True}

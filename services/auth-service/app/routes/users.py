@@ -53,8 +53,10 @@ def update_me(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    _UPDATABLE = {"display_name", "weight_kg", "height_cm", "timezone", "bedtime_reminder_time", "date_of_birth", "gender"}
     for field, value in body.model_dump(exclude_none=True).items():
-        setattr(user, field, value)
+        if field in _UPDATABLE:
+            setattr(user, field, value)
 
     db.commit()
     db.refresh(user)
@@ -149,6 +151,21 @@ async def upload_avatar(
     return user
 
 
+@router.get("/internal/users/{user_id}/email", include_in_schema=False)
+def get_user_email_internal(
+    user_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Internal endpoint — returns a user's email for notification dispatch."""
+    if not settings.INTERNAL_API_SECRET or x_internal_secret != settings.INTERNAL_API_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"email": user.email}
+
+
 @router.get("/internal/with-reminder/{hhmm}", include_in_schema=False)
 def users_with_reminder(
     hhmm: str,
@@ -176,6 +193,7 @@ def delete_me(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Revoke Redis refresh tokens (best-effort; can't enumerate rt:{token} keys by user)
+    import hashlib as _hl
     r = get_redis()
     if r:
         try:
@@ -183,7 +201,7 @@ def delete_me(
                 RefreshToken.user_id == user_id, RefreshToken.is_revoked == False
             ).all()
             for t in tokens:
-                r.delete(f"rt:{t.token}")
+                r.delete(f"rt:{_hl.sha256(t.token.encode()).hexdigest()}")
         except Exception:
             pass
 
@@ -206,5 +224,29 @@ def delete_me(
                 pass
         except Exception:
             _logger.warning("analytics purge failed for user %s — data may remain", user_id, exc_info=True)
+
+    # Purge audio-ingestion-service S3 data
+    if settings.INGESTION_SERVICE_URL:
+        try:
+            url = f"{settings.INGESTION_SERVICE_URL.rstrip('/')}/internal/users/{user_id}/audio"
+            req = urllib.request.Request(url, method="DELETE")
+            if settings.INTERNAL_API_SECRET:
+                req.add_header("X-Internal-Secret", settings.INTERNAL_API_SECRET)
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+        except Exception:
+            _logger.warning("ingestion S3 purge failed for user %s — audio may remain", user_id, exc_info=True)
+
+    # Purge notification-service records
+    if settings.NOTIFICATION_SERVICE_URL:
+        try:
+            url = f"{settings.NOTIFICATION_SERVICE_URL.rstrip('/')}/internal/users/{user_id}"
+            req = urllib.request.Request(url, method="DELETE")
+            if settings.INTERNAL_API_SECRET:
+                req.add_header("X-Internal-Secret", settings.INTERNAL_API_SECRET)
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except Exception:
+            _logger.warning("notification purge failed for user %s — records may remain", user_id, exc_info=True)
 
     return Response(status_code=204)

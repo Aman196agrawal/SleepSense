@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, Modal, ActivityIndicator,
@@ -58,6 +59,11 @@ export default function ProfileScreen() {
   const [pickerM, setPickerM]           = useState(30);
   const [pickerAP, setPickerAP]         = useState<'AM' | 'PM'>('PM');
   const [saving, setSaving]             = useState(false);
+  const [privacyMode, setPrivacyMode]   = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem('privacyMode').then(val => setPrivacyMode(val === 'true'));
+  }, []);
 
   useEffect(() => {
     if (user?.bedtime_reminder_time) {
@@ -160,7 +166,7 @@ export default function ProfileScreen() {
               onPress={() => setShowPicker(true)}
             />
             <View style={styles.divider} />
-            <MenuItem icon="shield-checkmark-outline" label="Privacy Mode"     value="Off"          onPress={handlePrivacyMode} />
+            <MenuItem icon="shield-checkmark-outline" label="Privacy Mode"     value={privacyMode ? "On" : "Off"} onPress={handlePrivacyMode} />
           </View>
         </View>
 

@@ -80,6 +80,26 @@ def purge_user_data(
     return Response(status_code=204)
 
 
+@app.get("/internal/users/{user_id}/recent-scores", include_in_schema=False)
+def get_recent_scores(
+    user_id: str,
+    limit: int = 5,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Internal — returns the N most recent sleep quality scores for health alert logic."""
+    if not settings.INTERNAL_API_SECRET or x_internal_secret != settings.INTERNAL_API_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    rows = (
+        db.query(SleepSession.sleep_quality_score)
+        .filter(SleepSession.user_id == user_id, SleepSession.status == "complete")
+        .order_by(SleepSession.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {"scores": [r[0] for r in rows if r[0] is not None]}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "analytics-service"}

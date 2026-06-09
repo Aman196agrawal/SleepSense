@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from app.security import decode_token
 
 router = APIRouter()
@@ -17,6 +17,13 @@ class ConnectionManager:
     async def connect(self, user_id: str, ws: WebSocket) -> None:
         self._active.setdefault(user_id, []).append(ws)
         _logger.debug("WebSocket connected: user=%s total=%d", user_id, len(self._active[user_id]))
+        try:
+            from app.redis_client import get_redis as _gr
+            r = _gr()
+            if r:
+                r.sadd("ws:active", user_id)
+        except Exception:
+            pass
 
     def disconnect(self, user_id: str, ws: WebSocket) -> None:
         conns = self._active.get(user_id, [])
@@ -24,6 +31,13 @@ class ConnectionManager:
             conns.remove(ws)
         if not conns:
             self._active.pop(user_id, None)
+            try:
+                from app.redis_client import get_redis as _gr
+                r = _gr()
+                if r:
+                    r.srem("ws:active", user_id)
+            except Exception:
+                pass
 
     async def send_to_user(self, user_id: str, event: dict) -> None:
         for ws in list(self._active.get(user_id, [])):
@@ -37,24 +51,19 @@ manager = ConnectionManager()
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
-    await ws.accept()
-
-    # Post-accept auth: client must send {"token": "<access_token>"} within 10 seconds.
-    # This keeps bearer tokens out of server logs and browser history.
+async def websocket_endpoint(ws: WebSocket, token: str = Query(...)):
+    # Auth via query param: wss://...?token=<access_token> (FR-WS-001)
     try:
-        raw = await asyncio.wait_for(ws.receive_text(), timeout=_AUTH_TIMEOUT_SECONDS)
-        msg = json.loads(raw)
-        token = msg.get("token", "")
         payload = decode_token(token)
         if payload.get("type") != "access":
             raise ValueError("wrong token type")
         user_id = payload["sub"]
-    except (asyncio.TimeoutError, Exception) as exc:
+    except Exception as exc:
         _logger.debug("WS auth failed: %s", exc)
-        await ws.close(code=1008)
+        await ws.close(code=4001)
         return
 
+    await ws.accept()
     await manager.connect(user_id, ws)
 
     async def heartbeat():

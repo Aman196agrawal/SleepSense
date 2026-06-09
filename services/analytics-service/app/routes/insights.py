@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import SessionInsight, SleepSession, LifestyleLog
@@ -14,6 +15,7 @@ router = APIRouter()
 @router.get("")
 def get_insights(
     limit: int = 10,
+    session_id: Optional[str] = None,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
@@ -37,14 +39,11 @@ def get_insights(
     # Pattern-based insights from real data
     pattern_insights = generate_pattern_insights(user_id, sessions, lifestyle_logs)
 
-    # Stored insights from session-end events (most recent 5)
-    stored = (
-        db.query(SessionInsight)
-        .filter(SessionInsight.user_id == user_id)
-        .order_by(SessionInsight.created_at.desc())
-        .limit(5)
-        .all()
-    )
+    # Stored insights from session-end events (most recent 5, filtered by session if requested)
+    stored_q = db.query(SessionInsight).filter(SessionInsight.user_id == user_id)
+    if session_id:
+        stored_q = stored_q.filter(SessionInsight.session_id == session_id)
+    stored = stored_q.order_by(SessionInsight.created_at.desc()).limit(5).all()
 
     stored_dicts = [
         {

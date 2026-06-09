@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # Analytics service internal URL — used to purge user data on account deletion
     ANALYTICS_SERVICE_URL: str = "http://localhost:8002"
 
+    # Downstream service URLs for GDPR cascade
+    INGESTION_SERVICE_URL: str = "http://audio-ingestion-service:8003"
+    NOTIFICATION_SERVICE_URL: str = "http://notification-service:8005"
+
     # Shared secret for service-to-service internal endpoints
     INTERNAL_API_SECRET: str = ""
 
