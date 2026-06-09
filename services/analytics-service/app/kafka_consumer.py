@@ -110,6 +110,7 @@ def _handle_analysis_complete(payload: dict, db_factory, kafka_emit):
             db.commit()
             return
 
+        session.processed_chunks = (session.processed_chunks or 0) + 1
         total = session.total_chunks or 0
 
         # Use Redis to atomically track how many ML events have arrived for this session.

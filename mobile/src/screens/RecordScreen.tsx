@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Platform, AppState, AppStateStatus, Vibration } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

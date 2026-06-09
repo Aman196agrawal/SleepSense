@@ -12,13 +12,11 @@ class SleepSenseWS {
     if (this.ws) return;
     const token = await AsyncStorage.getItem('access_token');
     if (!token) return;
-    const url = ANALYTICS_URL.replace(/^http/, 'ws') + '/ws';
+    const wsBase = ANALYTICS_URL.replace(/^http/, 'ws');
+    const url = `${wsBase}/ws?token=${encodeURIComponent(token)}`;
     try {
       this.ws = new WebSocket(url);
-      this.ws.onopen = () => {
-        // Send auth as the first message — keeps the token out of server logs and URL history
-        this.ws?.send(JSON.stringify({ token }));
-      };
+      this.ws.onopen = () => {};
       this.ws.onmessage = (e) => {
         try {
           const msg: WSEvent = JSON.parse(e.data);
