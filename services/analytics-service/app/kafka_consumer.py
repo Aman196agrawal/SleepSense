@@ -46,18 +46,36 @@ def run_consumer(db_factory, kafka_emit):
             )
 
 
+def _safe_float(val, default: float = 0.0) -> float:
+    try:
+        return float(val) if val is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(val, default: int = 0) -> int:
+    try:
+        return int(val) if val is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
 def _handle_analysis_complete(payload: dict, db_factory, kafka_emit):
     from app.models import SleepSession, TimelineBucket
 
-    session_id  = payload["session_id"]
-    user_id     = payload["user_id"]
-    chunk_index = int(payload["chunk_index"])
-    summary     = payload.get("summary", {})
+    session_id = payload.get("session_id")
+    user_id    = payload.get("user_id")
+    if not session_id or not user_id:
+        _logger.warning("Dropping malformed analysis.complete payload: missing session_id/user_id")
+        return
 
-    snore_ratio       = float(summary.get("snore_ratio", 0.0))
-    avg_intensity     = float(summary.get("avg_intensity", 0.0))
-    total_windows     = int(summary.get("total_windows", 0))
-    snore_windows     = int(summary.get("snore_windows", 0))
+    chunk_index = _safe_int(payload.get("chunk_index"), 0)
+    summary     = payload.get("summary") or {}
+
+    snore_ratio       = _safe_float(summary.get("snore_ratio"))
+    avg_intensity     = _safe_float(summary.get("avg_intensity"))
+    total_windows     = _safe_int(summary.get("total_windows"))
+    snore_windows     = _safe_int(summary.get("snore_windows"))
 
     dominant_class    = "snoring" if snore_ratio >= 0.3 else (
         "breathing" if total_windows > 0 else "silence"

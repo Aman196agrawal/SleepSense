@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Analytics service internal URL — used to purge user data on account deletion
     ANALYTICS_SERVICE_URL: str = "http://localhost:8002"
 
+    # Shared secret for service-to-service internal endpoints
+    INTERNAL_API_SECRET: str = ""
+
     # S3 / MinIO — avatar image storage
     S3_BUCKET_ASSETS: str = ""          # blank → avatar upload unavailable
     S3_ENDPOINT_URL: str = ""

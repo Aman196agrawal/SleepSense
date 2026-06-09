@@ -85,6 +85,24 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleEditDisplayName = () =>
+    Alert.alert('Display Name', 'Display name editing is coming in the next release.', [{ text: 'OK' }]);
+
+  const handleEditEmail = () =>
+    Alert.alert('Email', 'Email changes require verification and are coming in the next release.', [{ text: 'OK' }]);
+
+  const handleEditTimezone = () =>
+    Alert.alert('Timezone', 'Timezone selection is coming in the next release.', [{ text: 'OK' }]);
+
+  const handlePrivacyMode = () =>
+    Alert.alert('Privacy Mode', 'Toggle Privacy Mode on the Record screen before starting a session to keep audio on-device.', [{ text: 'Got it' }]);
+
+  const handleAbout = () =>
+    Alert.alert('SleepSense', 'Version 1.0.0 — Sample Build\n\nA sleep & snoring analytics platform built with React Native + FastAPI.', [{ text: 'OK' }]);
+
+  const handlePrivacyPolicy = () =>
+    Alert.alert('Privacy Policy', 'Full privacy policy will be available at sleepsense.app/privacy before public launch.', [{ text: 'OK' }]);
+
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
@@ -119,11 +137,11 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
           <View style={styles.card}>
-            <MenuItem icon="person-outline" label="Display Name" value={user?.display_name ?? '—'} onPress={() => {}} />
+            <MenuItem icon="person-outline" label="Display Name" value={user?.display_name ?? '—'} onPress={handleEditDisplayName} />
             <View style={styles.divider} />
-            <MenuItem icon="mail-outline"   label="Email"        value={user?.email}                onPress={() => {}} />
+            <MenuItem icon="mail-outline"   label="Email"        value={user?.email}                onPress={handleEditEmail} />
             <View style={styles.divider} />
-            <MenuItem icon="time-outline"   label="Timezone"     value={user?.timezone ?? 'UTC'}    onPress={() => {}} />
+            <MenuItem icon="time-outline"   label="Timezone"     value={user?.timezone ?? 'UTC'}    onPress={handleEditTimezone} />
           </View>
         </View>
 
@@ -141,16 +159,16 @@ export default function ProfileScreen() {
               onPress={() => setShowPicker(true)}
             />
             <View style={styles.divider} />
-            <MenuItem icon="shield-checkmark-outline" label="Privacy Mode"     value="Off"          onPress={() => {}} />
+            <MenuItem icon="shield-checkmark-outline" label="Privacy Mode"     value="Off"          onPress={handlePrivacyMode} />
           </View>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>App</Text>
           <View style={styles.card}>
-            <MenuItem icon="information-circle-outline" label="About SleepSense" onPress={() => {}} />
+            <MenuItem icon="information-circle-outline" label="About SleepSense" onPress={handleAbout} />
             <View style={styles.divider} />
-            <MenuItem icon="document-text-outline"      label="Privacy Policy"   onPress={() => {}} />
+            <MenuItem icon="document-text-outline"      label="Privacy Policy"   onPress={handlePrivacyPolicy} />
           </View>
         </View>
 

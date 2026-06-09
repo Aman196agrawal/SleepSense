@@ -10,6 +10,7 @@ _UUID_RE = re.compile(
 )
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -86,8 +87,8 @@ def start_session(
 @router.post("/{session_id}/chunks", status_code=202)
 async def upload_chunk(
     session_id: str,
-    chunk_index: int      = Form(...),
-    duration_seconds: int = Form(...),
+    chunk_index: int      = Form(..., ge=0),
+    duration_seconds: int = Form(..., ge=1, le=300),
     audio: UploadFile     = File(...),
     user_id: str          = Depends(get_current_user_id),
     db: Session           = Depends(get_db),
@@ -160,7 +161,11 @@ async def upload_chunk(
     )
     db.add(chunk)
     session.total_chunks = chunk_index + 1
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"Chunk {chunk_index} already uploaded for this session")
 
     # Kafka: trigger ML inference pipeline
     emit("audio.chunk.uploaded", {

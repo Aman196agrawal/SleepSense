@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Comma-separated origin allowlist for CORS. Use "*" only for dev.
     CORS_ALLOWED_ORIGINS: str = "http://localhost:8081,http://localhost:19006,http://localhost:3000"
 
+    # Shared secret for service-to-service internal endpoints
+    INTERNAL_API_SECRET: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

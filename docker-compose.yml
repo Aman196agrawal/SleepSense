@@ -9,12 +9,18 @@
 # Required env vars (defined in your .env, no defaults in this file):
 #   SECRET_KEY        — JWT signing secret, must match across services
 #   INFLUXDB_TOKEN    — Influx admin token (used by influxdb + analytics)
+#
+# Optional env vars (safe defaults shown):
+#   MINIO_ROOT_USER     — MinIO root username     (default: minioadmin)
+#   MINIO_ROOT_PASSWORD — MinIO root password     (default: minioadmin)
+#   INTERNAL_API_SECRET — Service-to-service auth (default: empty = disabled)
 # ─────────────────────────────────────────────────────────────────────────────
 
 x-common-env: &common-env
   # No default — Compose will fail loudly if SECRET_KEY is missing from .env.
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required in .env (>=32 random chars)}
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8081,http://localhost:19006,http://localhost:3000}
+  INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
 
 services:
 
@@ -126,10 +132,10 @@ services:
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"   # S3 API
-      - "9001:9001"   # Web console  (http://localhost:9001  admin/minioadmin)
+      - "9001:9001"   # Web console  (http://localhost:9001)
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
       - minio_data:/data
     healthcheck:
@@ -144,9 +150,12 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     entrypoint: >
       sh -c "
-        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
         mc mb --ignore-existing local/audio-chunks &&
         mc mb --ignore-existing local/ml-models &&
         mc anonymous set download local/ml-models &&
@@ -190,8 +199,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       S3_BUCKET: audio-chunks
       S3_ENDPOINT_URL: http://minio:9000
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       S3_REGION: us-east-1
     command: uvicorn app.main:app --host 0.0.0.0 --port 8003
     depends_on:
@@ -233,8 +242,8 @@ services:
       INFLUXDB_BUCKET: snore_events
       S3_BUCKET: audio-chunks
       S3_ENDPOINT_URL: http://minio:9000
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       S3_REGION: us-east-1
     command: uvicorn app.main:app --host 0.0.0.0 --port 8004
     depends_on:
@@ -276,8 +285,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_GROUP_ID: analytics-consumer-group
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: audio-chunks
     depends_on:
       postgres:

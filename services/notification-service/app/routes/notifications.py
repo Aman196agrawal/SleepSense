@@ -7,7 +7,7 @@ Notification routes:
 """
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,16 @@ from app.models import Notification
 from app.security import get_current_user_id
 
 router = APIRouter()
+
+
+def _parse_json_payload(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        result = json.loads(raw)
+        return result if isinstance(result, dict) else {}
+    except (json.JSONDecodeError, ValueError):
+        return {}
 
 
 # ── Response schema ───────────────────────────────────────────────────────────
@@ -38,7 +48,7 @@ class NotificationOut(BaseModel):
             type=n.type,
             title=n.title,
             body=n.body,
-            payload=json.loads(n.payload or "{}"),
+            payload=_parse_json_payload(n.payload),
             channel=n.channel,
             is_read=n.is_read,
             sent_at=n.sent_at.isoformat() if n.sent_at else None,
@@ -50,8 +60,8 @@ class NotificationOut(BaseModel):
 
 @router.get("")
 def list_notifications(
-    limit:   int = 20,
-    offset:  int = 0,
+    limit:   int = Query(20, ge=1, le=100),
+    offset:  int = Query(0, ge=0),
     user_id: str = Depends(get_current_user_id),
     db:      Session = Depends(get_db),
 ):

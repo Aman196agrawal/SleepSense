@@ -2,7 +2,7 @@ import io
 import json as _json
 import logging
 import urllib.request
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, UserHealthProfile, RefreshToken, SocialAccount, PasswordResetToken
@@ -150,9 +150,15 @@ async def upload_avatar(
 
 
 @router.get("/internal/with-reminder/{hhmm}", include_in_schema=False)
-def users_with_reminder(hhmm: str, db: Session = Depends(get_db)):
+def users_with_reminder(
+    hhmm: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
     """Internal endpoint used by notification-service to send bedtime reminders (FR-GOAL-001).
-    Returns minimal user info for all users whose bedtime_reminder_time matches HH:MM."""
+    Protected by a shared secret header — never call from untrusted clients."""
+    if not settings.INTERNAL_API_SECRET or x_internal_secret != settings.INTERNAL_API_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
     users = db.query(User).filter(
         User.bedtime_reminder_time == hhmm,
         User.is_active == True,
@@ -194,6 +200,8 @@ def delete_me(
         try:
             url = f"{settings.ANALYTICS_SERVICE_URL.rstrip('/')}/internal/users/{user_id}"
             req = urllib.request.Request(url, method="DELETE")
+            if settings.INTERNAL_API_SECRET:
+                req.add_header("X-Internal-Secret", settings.INTERNAL_API_SECRET)
             with urllib.request.urlopen(req, timeout=5):
                 pass
         except Exception:

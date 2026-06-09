@@ -94,14 +94,21 @@ def _consume_from_db(token: str, db: Session) -> str:
     return rt.user_id
 
 
+_ATOMIC_GETDEL = """
+local val = redis.call('GET', KEYS[1])
+if val then redis.call('DEL', KEYS[1]) end
+return val
+"""
+
+
 def _consume_refresh_token(token: str, db: Session) -> str:
-    """Validate + rotate: returns user_id or raises 401."""
+    """Validate + rotate: returns user_id or raises 401.
+    Uses a Lua script for atomic GET+DEL to prevent token reuse under concurrent requests."""
     r = get_redis()
     if r:
         try:
-            user_id = r.get(f"rt:{token}")
+            user_id = r.eval(_ATOMIC_GETDEL, 1, f"rt:{token}")
             if user_id:
-                r.delete(f"rt:{token}")
                 return user_id
             # Redis is up but the token isn't there — could be expired/revoked,
             # or could have been written before Redis was wired up. Fall back
@@ -285,7 +292,7 @@ def logout(body: RefreshRequest, db: Session = Depends(get_db)):
 def social_google(body: SocialLoginRequest, db: Session = Depends(get_db)):
     info = _verify_google_token(body.id_token)
 
-    if not info.get("email_verified") in (True, "true"):
+    if info.get("email_verified") not in (True, "true"):
         raise HTTPException(status_code=401, detail="Google email not verified")
 
     google_uid   = info.get("sub", "")
@@ -447,7 +454,9 @@ def social_apple(body: SocialLoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/forgot-password")
-def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip, "forgot_password")
     user = db.query(User).filter(User.email == body.email).first()
     if user:
         db.query(PasswordResetToken).filter(
@@ -465,7 +474,7 @@ def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
         db.commit()
 
         reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
-        _logger.info("Password reset link for %s: %s", user.email, reset_url)
+        _logger.info("Password reset requested for %s", user.email)
         _send_email(
             to=user.email,
             subject="SleepSense — Reset your password",
@@ -476,7 +485,9 @@ def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/reset-password")
-def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
+def reset_password(request: Request, body: ResetPasswordRequest, db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip, "reset_password")
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     prt = db.query(PasswordResetToken).filter(
         PasswordResetToken.token == body.token,

@@ -2,7 +2,7 @@ import logging
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -58,8 +58,15 @@ app.include_router(goals.router,      prefix="/goals",     tags=["Goals"])
 app.include_router(ws_router, tags=["WebSocket"])
 
 @app.delete("/internal/users/{user_id}", status_code=204, include_in_schema=False)
-def purge_user_data(user_id: str, db: Session = Depends(get_db)):
-    """Internal endpoint — called by auth-service on account deletion to purge analytics data."""
+def purge_user_data(
+    user_id: str,
+    x_internal_secret: str | None = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(get_db),
+):
+    """Internal endpoint — called by auth-service on account deletion to purge analytics data.
+    Protected by a shared secret header — never call from untrusted clients."""
+    if not settings.INTERNAL_API_SECRET or x_internal_secret != settings.INTERNAL_API_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
     db.query(UserGoal).filter(UserGoal.user_id == user_id).delete()
     db.query(LifestyleLog).filter(LifestyleLog.user_id == user_id).delete()
     db.query(SessionInsight).filter(SessionInsight.user_id == user_id).delete()

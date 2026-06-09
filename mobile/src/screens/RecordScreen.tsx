@@ -64,9 +64,10 @@ export default function RecordScreen({ navigation }: any) {
   const chunkTimerRef    = useRef(0);
   const tickTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const meterTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stoppingRef      = useRef(false);   // true while stopRecording is executing
-  const chunkBusyRef     = useRef(false);   // true while recorder is being cycled for a chunk
+  const stoppingRef      = useRef(false);
+  const chunkBusyRef     = useRef(false);
   const appStateRef      = useRef<AppStateStatus>(AppState.currentState);
+  const wsUnsubsRef      = useRef<(() => void)[]>([]);
   // Rolling window of dBFS readings fed to the on-device TFLite classifier
   const meteringHistRef  = useRef<number[]>([]);
   const statsRef         = useRef<{ intensities: number[]; classes: string[]; events: number }>({
@@ -251,17 +252,19 @@ export default function RecordScreen({ navigation }: any) {
         const res = await AnalyticsAPI.startSession();
         sessionIdRef.current = res.data.session_id;
         await sleepSenseWS.connect();
-        sleepSenseWS.on('chunk.analyzed', (data) => {
-          if (data?.chunk_index !== undefined) setChunkCount(data.chunk_index + 1);
-        });
-        sleepSenseWS.on('session.complete', (data) => {
-          if (data?.sleep_quality_score !== undefined) {
-            Alert.alert(
-              `Session Complete 🌙`,
-              `Sleep score: ${data.sleep_quality_score} (${data.sleep_quality_grade})\nSnoring: ${data.snoring_percentage}%`,
-            );
-          }
-        });
+        wsUnsubsRef.current = [
+          sleepSenseWS.on('chunk.analyzed', (data) => {
+            if (data?.chunk_index !== undefined) setChunkCount(data.chunk_index + 1);
+          }),
+          sleepSenseWS.on('session.complete', (data) => {
+            if (data?.sleep_quality_score !== undefined) {
+              Alert.alert(
+                `Session Complete 🌙`,
+                `Sleep score: ${data.sleep_quality_score} (${data.sleep_quality_grade})\nSnoring: ${data.snoring_percentage}%`,
+              );
+            }
+          }),
+        ];
       } else {
         sessionIdRef.current = null; // local-only session
       }
@@ -285,16 +288,20 @@ export default function RecordScreen({ navigation }: any) {
 
       meterTimerRef.current = setInterval(pollMeter, METER_POLL_MS);
 
-      tickTimerRef.current = setInterval(async () => {
+      tickTimerRef.current = setInterval(() => {
         setElapsed(e => e + 1);
         chunkTimerRef.current += 1;
 
         if (chunkTimerRef.current >= CHUNK_SECONDS) {
           chunkTimerRef.current = 0;
-          await flushChunk();
+          flushChunk().catch(err => console.error('chunk flush failed', err));
         }
       }, 1000);
     } catch (err: any) {
+      wsUnsubsRef.current.forEach(u => u());
+      wsUnsubsRef.current = [];
+      if (tickTimerRef.current)  { clearInterval(tickTimerRef.current);  tickTimerRef.current  = null; }
+      if (meterTimerRef.current) { clearInterval(meterTimerRef.current); meterTimerRef.current = null; }
       Alert.alert('Error', err?.message ?? 'Could not start recording.');
       setPhase('idle');
     }
@@ -354,6 +361,8 @@ export default function RecordScreen({ navigation }: any) {
       console.warn('foreground notification stop failed', err)
     );
 
+    wsUnsubsRef.current.forEach(u => u());
+    wsUnsubsRef.current = [];
     sleepSenseWS.disconnect();
     stoppingRef.current  = false;
     chunkBusyRef.current = false;

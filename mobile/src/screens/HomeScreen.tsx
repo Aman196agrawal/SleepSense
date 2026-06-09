@@ -197,8 +197,8 @@ export default function HomeScreen({ navigation }: any) {
           {!loading && correlations.length > 0 && (
             <View style={{ marginTop: Spacing.x2 }}>
               <SectionHeader title="Lifestyle Impact" icon="analytics" />
-              {correlations.map((c: any, i: number) => (
-                <View key={i} style={styles.corrCard}>
+              {correlations.map((c: any) => (
+                <View key={c.factor ?? c.id ?? c.label} style={styles.corrCard}>
                   <IconBadge icon="trending-up-outline" color={Colors.secondary} size={36} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.corrTitle}>{c.title}</Text>
