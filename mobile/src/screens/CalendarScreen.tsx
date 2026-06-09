@@ -1,20 +1,21 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../theme/colors';
+import { Colors, Radii } from '../theme';
+import AuroraBackground from '../components/AuroraBackground';
 import * as AnalyticsAPI from '../api/analytics.api';
 
 const COLOR_MAP: Record<string, string> = {
-  excellent: Colors.excellent ?? '#22C55E',
-  good:      '#4ADE80',
-  fair:      '#FACC15',
-  poor:      '#F97316',
-  critical:  '#EF4444',
-  none:      Colors.surfaceHigh ?? '#1A2E4A',
+  excellent: Colors.excellent,
+  good:      Colors.good,
+  fair:      Colors.fair,
+  poor:      Colors.poor,
+  critical:  Colors.critical,
+  none:      Colors.surfaceHigh,
 };
 
 const GRADE_LABELS: Record<string, string> = {
@@ -46,13 +47,23 @@ export default function CalendarScreen({ navigation }: any) {
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected,   setSelected]   = useState<DayEntry | null>(null);
+  const [loadError,  setLoadError]  = useState(false);
+  const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async (d = days) => {
+    setLoadError(false);
     try {
       const res = await AnalyticsAPI.getCalendar(d);
       setCalendar(res.data.calendar ?? []);
-    } catch {} finally { setLoading(false); setRefreshing(false); }
+    } catch { setLoadError(true); } finally { setLoading(false); setRefreshing(false); }
   }, [days]);
+
+  // Auto-dismiss tooltip after 6 seconds
+  useEffect(() => {
+    if (!selected) return;
+    tooltipTimer.current = setTimeout(() => setSelected(null), 6000);
+    return () => { if (tooltipTimer.current) clearTimeout(tooltipTimer.current); };
+  }, [selected]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -88,16 +99,21 @@ export default function CalendarScreen({ navigation }: any) {
     ? Math.round(calendar.filter(d => d.quality_score != null).reduce((s, d) => s + (d.quality_score ?? 0), 0) / recorded)
     : 0;
 
-  if (loading) return <View style={styles.center}><ActivityIndicator color={Colors.primary} size="large" /></View>;
+  if (loading) return (
+    <AuroraBackground style={styles.center}>
+      <ActivityIndicator color={Colors.primary} size="large" />
+    </AuroraBackground>
+  );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg }}>
+    <AuroraBackground>
+      <SafeAreaView style={{ flex: 1 }}>
       <ScrollView
         contentContainerStyle={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.primary} />}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
+          <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Go back">
             <Ionicons name="arrow-back" size={24} color={Colors.text} />
           </TouchableOpacity>
           <Text style={styles.title}>Sleep Calendar</Text>
@@ -109,6 +125,13 @@ export default function CalendarScreen({ navigation }: any) {
             ))}
           </View>
         </View>
+
+        {loadError && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="cloud-offline-outline" size={16} color={Colors.danger} />
+            <Text style={styles.errorBannerText}>Failed to load calendar. Pull down to retry.</Text>
+          </View>
+        )}
 
         {/* Summary */}
         <View style={styles.summaryRow}>
@@ -184,23 +207,26 @@ export default function CalendarScreen({ navigation }: any) {
           </View>
         </View>
       )}
-    </SafeAreaView>
+      </SafeAreaView>
+    </AuroraBackground>
   );
 }
 
 const CELL_SIZE = 38;
 
 const styles = StyleSheet.create({
-  center:           { flex: 1, backgroundColor: Colors.bg, justifyContent: 'center', alignItems: 'center' },
+  center:           { justifyContent: 'center', alignItems: 'center' },
+  errorBanner:      { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.danger + '18', borderRadius: Radii.md, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: Colors.danger + '33' },
+  errorBannerText:  { color: Colors.danger, fontSize: 13, flex: 1 },
   container:        { padding: 20, paddingBottom: 60 },
   header:           { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 12 },
-  title:            { color: Colors.text, fontSize: 18, fontWeight: '700', flex: 1 },
-  periodRow:        { flexDirection: 'row', gap: 8 },
-  periodBtn:        { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: Colors.primary },
+  title:            { color: Colors.text, fontSize: 20, fontWeight: '800', flex: 1, letterSpacing: -0.4 },
+  periodRow:        { flexDirection: 'row', gap: 6, backgroundColor: 'rgba(31,31,61,0.6)', padding: 3, borderRadius: Radii.md, borderWidth: 1, borderColor: Colors.borderSoft },
+  periodBtn:        { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radii.sm },
   periodBtnActive:  { backgroundColor: Colors.primary },
-  periodBtnText:    { color: Colors.primary, fontWeight: '600', fontSize: 12 },
-  periodBtnTextActive: { color: Colors.bg },
-  summaryRow:       { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 20 },
+  periodBtnText:    { color: Colors.textSub, fontWeight: '700', fontSize: 12 },
+  periodBtnTextActive: { color: '#fff' },
+  summaryRow:       { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: 'rgba(167,139,250,0.06)', borderRadius: Radii.xl, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: Colors.borderSoft },
   summaryItem:      { alignItems: 'center', gap: 4 },
   summaryVal:       { color: Colors.text, fontSize: 22, fontWeight: '800' },
   summaryLbl:       { color: Colors.textMuted, fontSize: 11 },
@@ -215,11 +241,11 @@ const styles = StyleSheet.create({
   legendSwatch:     { width: 12, height: 12, borderRadius: 3 },
   legendText:       { color: Colors.textMuted, fontSize: 11 },
   tooltip:          { position: 'absolute', bottom: 24, left: 16, right: 16 },
-  tooltipContent:   { backgroundColor: Colors.surface, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: Colors.border },
-  tooltipDate:      { color: Colors.textMuted, fontSize: 12, marginBottom: 4 },
-  tooltipScore:     { color: Colors.text, fontWeight: '700', fontSize: 16, marginBottom: 4 },
-  tooltipSub:       { color: Colors.textSub, fontSize: 13 },
-  tooltipBtn:       { marginTop: 12, backgroundColor: Colors.primary, borderRadius: 10, padding: 10, alignItems: 'center' },
-  tooltipBtnText:   { color: Colors.bg, fontWeight: '700' },
+  tooltipContent:   { backgroundColor: Colors.surfaceHigh, borderRadius: Radii.xl, padding: 20, borderWidth: 1, borderColor: Colors.borderSoft, shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 10 },
+  tooltipDate:      { color: Colors.textMuted, fontSize: 11, marginBottom: 4, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase' },
+  tooltipScore:     { color: Colors.text, fontWeight: '800', fontSize: 17, marginBottom: 4, letterSpacing: -0.4 },
+  tooltipSub:       { color: Colors.textSub, fontSize: 13, fontWeight: '500' },
+  tooltipBtn:       { marginTop: 12, backgroundColor: Colors.primary, borderRadius: Radii.md, padding: 10, alignItems: 'center' },
+  tooltipBtnText:   { color: '#fff', fontWeight: '800', letterSpacing: 0.2 },
   tooltipClose:     { position: 'absolute', top: 12, right: 12 },
 });

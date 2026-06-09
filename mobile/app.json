@@ -7,11 +7,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "backgroundColor": "#0A1628"
+      "backgroundColor": "#0B0B1F"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0A1628"
+        "backgroundColor": "#0B0B1F"
       },
       "permissions": [
         "RECORD_AUDIO",
@@ -41,7 +41,7 @@
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#0A2463",
+          "color": "#A78BFA",
           "sounds": []
         }
       ]

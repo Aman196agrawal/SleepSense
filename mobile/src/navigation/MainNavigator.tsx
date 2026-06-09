@@ -1,8 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator, NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../theme/colors';
+import FloatingTabBar from './FloatingTabBar';
 
 import HomeScreen          from '../screens/HomeScreen';
 import RecordScreen        from '../screens/RecordScreen';
@@ -80,38 +79,15 @@ function ProfileStack() {
   );
 }
 
-const TAB_ICONS: Record<keyof MainTabParams, { default: string; focused: string }> = {
-  Home:      { default: 'home-outline',      focused: 'home' },
-  Record:    { default: 'mic-outline',        focused: 'mic' },
-  Log:       { default: 'leaf-outline',       focused: 'leaf' },
-  History:   { default: 'bar-chart-outline',  focused: 'bar-chart' },
-  Profile:   { default: 'person-outline',     focused: 'person' },
-};
-
 export default function MainNavigator() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: Colors.surface,
-          borderTopColor: Colors.border,
-          height: 62,
-          paddingBottom: 8,
-        },
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.textMuted,
-        tabBarLabelStyle: { fontSize: 10, marginTop: 2 },
-        tabBarIcon: ({ color, focused }) => {
-          const icons = TAB_ICONS[route.name as keyof MainTabParams];
-          const name = focused ? icons?.focused : icons?.default;
-          return <Ionicons name={(name ?? 'ellipse-outline') as any} size={22} color={color} />;
-        },
-      })}
+      tabBar={(props) => <FloatingTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Home"    component={HomeStack} />
-      <Tab.Screen name="Record"  component={RecordScreen} />
       <Tab.Screen name="Log"     component={LifestyleLogScreen} />
+      <Tab.Screen name="Record"  component={RecordScreen} />
       <Tab.Screen name="History" component={HistoryStack} />
       <Tab.Screen name="Profile" component={ProfileStack} />
     </Tab.Navigator>

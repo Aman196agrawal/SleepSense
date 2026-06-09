@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator, Vibration,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
-import { Colors } from '../theme/colors';
+import { Colors, Gradients, Radii } from '../theme';
+import AuroraBackground from '../components/AuroraBackground';
 import { useAuthStore } from '../store/authStore';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParams } from '../navigation/AuthNavigator';
@@ -26,6 +27,7 @@ export default function LoginScreen({ navigation }: Props) {
   const [showPw, setShowPw]           = useState(false);
   const [errors, setErrors]           = useState<{ email?: string; password?: string; form?: string }>({});
   const { login, socialLoginGoogle }  = useAuthStore();
+  const passwordRef = useRef<TextInput>(null);
 
   // Fallback to 'not-configured' so the hook doesn't throw an invariant when
   // Google OAuth env vars aren't set in dev. The button guard in handleGoogleSignIn
@@ -70,6 +72,7 @@ export default function LoginScreen({ navigation }: Props) {
 
   const handleLogin = async () => {
     if (!validate()) return;
+    Vibration.vibrate(15);
     setLoading(true);
     setErrors({});
     try {
@@ -104,13 +107,19 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <LinearGradient colors={['#0A1628', '#112240']} style={{ flex: 1 }}>
+    <AuroraBackground style={{ flex: 1 }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <View style={styles.logoWrap}>
-            <Ionicons name="moon" size={48} color={Colors.primary} />
+            <LinearGradient
+              colors={Gradients.cta as any}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={styles.logoBadge}
+            >
+              <Ionicons name="moon" size={32} color="#fff" />
+            </LinearGradient>
             <Text style={styles.appName}>SleepSense</Text>
-            <Text style={styles.tagline}>Sleep Better, Live Better</Text>
+            <Text style={styles.tagline}>Sleep better, live better</Text>
           </View>
 
           <View style={styles.card}>
@@ -134,6 +143,9 @@ export default function LoginScreen({ navigation }: Props) {
                 onChangeText={t => { setEmail(t); clearErr('email'); }}
                 autoCapitalize="none"
                 keyboardType="email-address"
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => passwordRef.current?.focus()}
               />
             </View>
             {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
@@ -142,12 +154,15 @@ export default function LoginScreen({ navigation }: Props) {
             <View style={[styles.inputWrap, errors.password && styles.inputError]}>
               <Ionicons name="lock-closed-outline" size={18} color={errors.password ? Colors.danger : Colors.textMuted} />
               <TextInput
+                ref={passwordRef}
                 style={styles.input}
                 placeholder="••••••••"
                 placeholderTextColor={Colors.textMuted}
                 value={password}
                 onChangeText={t => { setPassword(t); clearErr('password'); }}
                 secureTextEntry={!showPw}
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
               />
               <TouchableOpacity onPress={() => setShowPw(!showPw)}>
                 <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={18} color={Colors.textMuted} />
@@ -160,7 +175,7 @@ export default function LoginScreen({ navigation }: Props) {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.btn} onPress={handleLogin} disabled={loading || googleLoading}>
-              <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.btnInner}>
+              <LinearGradient colors={Gradients.cta as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.btnInner}>
                 <Text style={styles.btnText}>{loading ? 'Signing in…' : 'Sign In'}</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -195,36 +210,37 @@ export default function LoginScreen({ navigation }: Props) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </AuroraBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container:     { flexGrow: 1, paddingHorizontal: 24, paddingTop: 80, paddingBottom: 40 },
-  logoWrap:      { alignItems: 'center', marginBottom: 40 },
-  appName:       { fontSize: 28, fontWeight: '800', color: Colors.text, marginTop: 12 },
-  tagline:       { color: Colors.textSub, marginTop: 4 },
-  card:          { backgroundColor: Colors.surface, borderRadius: 20, padding: 24 },
-  heading:       { fontSize: 22, fontWeight: '700', color: Colors.text, marginBottom: 20 },
-  formError:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.danger + '18', borderRadius: 10, padding: 12, marginBottom: 12 },
+  container:     { flexGrow: 1, paddingHorizontal: 24, paddingTop: 60, paddingBottom: 40 },
+  logoWrap:      { alignItems: 'center', marginBottom: 32 },
+  logoBadge:     { width: 64, height: 64, borderRadius: 20, alignItems: 'center', justifyContent: 'center', shadowColor: '#A78BFA', shadowOpacity: 0.55, shadowRadius: 20, shadowOffset: { width: 0, height: 0 }, elevation: 12 },
+  appName:       { fontSize: 30, fontWeight: '800', color: Colors.text, marginTop: 14, letterSpacing: -0.8 },
+  tagline:       { color: Colors.textSub, marginTop: 4, fontSize: 13, fontWeight: '500' },
+  card:          { backgroundColor: 'rgba(31,31,61,0.7)', borderRadius: Radii.xxl, padding: 24, borderWidth: 1, borderColor: Colors.borderSoft },
+  heading:       { fontSize: 22, fontWeight: '800', color: Colors.text, marginBottom: 20, letterSpacing: -0.4 },
+  formError:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.danger + '20', borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: Colors.danger + '44' },
   formErrorText: { color: Colors.danger, fontSize: 13, flex: 1 },
-  label:         { color: Colors.textSub, fontSize: 13, marginBottom: 6, marginTop: 16 },
-  inputWrap:     { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.bg, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 14, paddingVertical: 12, gap: 10 },
+  label:         { color: Colors.textSub, fontSize: 13, marginBottom: 6, marginTop: 16, fontWeight: '600' },
+  inputWrap:     { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(11,11,31,0.6)', borderRadius: Radii.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 14, paddingVertical: 12, gap: 10 },
   inputError:    { borderColor: Colors.danger },
   input:         { flex: 1, color: Colors.text, fontSize: 15 },
   errorText:     { color: Colors.danger, fontSize: 12, marginTop: 4, marginLeft: 2 },
   forgotRow:     { alignSelf: 'flex-end', marginTop: 10 },
-  forgotText:    { color: Colors.primary, fontSize: 13 },
-  btn:           { borderRadius: 12, overflow: 'hidden', marginTop: 24 },
+  forgotText:    { color: Colors.primary, fontSize: 13, fontWeight: '600' },
+  btn:           { borderRadius: Radii.lg, overflow: 'hidden', marginTop: 24, shadowColor: '#A78BFA', shadowOpacity: 0.5, shadowRadius: 18, shadowOffset: { width: 0, height: 0 }, elevation: 10 },
   btnInner:      { paddingVertical: 15, alignItems: 'center' },
-  btnText:       { color: '#fff', fontWeight: '700', fontSize: 16 },
+  btnText:       { color: '#fff', fontWeight: '800', fontSize: 16, letterSpacing: 0.2 },
   dividerRow:    { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 20 },
   dividerLine:   { flex: 1, height: 1, backgroundColor: Colors.border },
-  dividerText:   { color: Colors.textMuted, fontSize: 13 },
-  googleBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, paddingVertical: 13, backgroundColor: Colors.bg },
-  googleIconWrap:{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  googleG:       { color: '#4285F4', fontWeight: '800', fontSize: 14 },
-  googleText:    { color: Colors.text, fontWeight: '600', fontSize: 15 },
+  dividerText:   { color: Colors.textMuted, fontSize: 12, fontWeight: '600', letterSpacing: 1 },
+  googleBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, borderRadius: Radii.md, borderWidth: 1, borderColor: Colors.border, paddingVertical: 13, backgroundColor: 'rgba(11,11,31,0.5)' },
+  googleIconWrap:{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  googleG:       { color: '#4285F4', fontWeight: '800', fontSize: 13 },
+  googleText:    { color: Colors.text, fontWeight: '600', fontSize: 14 },
   switchRow:     { flexDirection: 'row', justifyContent: 'center', marginTop: 20 },
   switchText:    { color: Colors.textSub, fontSize: 14 },
 });

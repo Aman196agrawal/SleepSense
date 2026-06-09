@@ -6,7 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../theme/colors';
+import { Colors, Gradients, Radii } from '../theme';
+import AuroraBackground from '../components/AuroraBackground';
 import { useAuthStore } from '../store/authStore';
 import { useNavigation } from '@react-navigation/native';
 import { scheduleBedtimeReminder } from '../api/notifications';
@@ -94,15 +95,22 @@ export default function ProfileScreen() {
   const initial = (user?.display_name ?? user?.email ?? 'U')[0].toUpperCase();
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg }}>
-      <ScrollView contentContainerStyle={styles.container}>
+    <AuroraBackground style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.heading}>Profile</Text>
 
         {/* Avatar */}
         <View style={styles.avatarSection}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initial}</Text>
-          </View>
+          <LinearGradient
+            colors={Gradients.cta as any}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={styles.avatar}
+          >
+            <View style={styles.avatarInner}>
+              <Text style={styles.avatarText}>{initial}</Text>
+            </View>
+          </LinearGradient>
           <Text style={styles.displayName}>{user?.display_name ?? 'Sleeper'}</Text>
           <Text style={styles.email}>{user?.email}</Text>
         </View>
@@ -231,7 +239,7 @@ export default function ProfileScreen() {
             </View>
 
             <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-              <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.saveBtnInner}>
+              <LinearGradient colors={Gradients.cta as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnInner}>
                 {saving
                   ? <ActivityIndicator size="small" color="#fff" />
                   : <Text style={styles.saveBtnText}>Save</Text>
@@ -242,39 +250,41 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </Modal>
     </SafeAreaView>
+    </AuroraBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container:    { padding: 20, paddingBottom: 40 },
-  heading:      { color: Colors.text, fontSize: 22, fontWeight: '700', marginBottom: 24 },
+  container:    { padding: 20, paddingBottom: 120 },
+  heading:      { color: Colors.text, fontSize: 28, fontWeight: '800', marginBottom: 24, letterSpacing: -0.8 },
   avatarSection:{ alignItems: 'center', marginBottom: 32 },
-  avatar:       { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.surfaceHigh, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: Colors.primary },
-  avatarText:   { color: Colors.primary, fontSize: 32, fontWeight: '800' },
-  displayName:  { color: Colors.text, fontSize: 20, fontWeight: '700', marginTop: 12 },
-  email:        { color: Colors.textSub, fontSize: 14, marginTop: 4 },
+  avatar:       { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', padding: 3, shadowColor: '#A78BFA', shadowOpacity: 0.5, shadowRadius: 20, shadowOffset: { width: 0, height: 0 }, elevation: 10 },
+  avatarInner:  { width: '100%', height: '100%', borderRadius: 42, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' },
+  avatarText:   { color: Colors.text, fontSize: 32, fontWeight: '800', letterSpacing: -0.4 },
+  displayName:  { color: Colors.text, fontSize: 22, fontWeight: '800', marginTop: 14, letterSpacing: -0.4 },
+  email:        { color: Colors.textSub, fontSize: 13, marginTop: 4 },
   section:      { marginBottom: 20 },
-  sectionTitle: { color: Colors.textMuted, fontSize: 12, fontWeight: '600', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8, marginLeft: 4 },
-  card:         { backgroundColor: Colors.surface, borderRadius: 14, borderWidth: 1, borderColor: Colors.border },
+  sectionTitle: { color: Colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 10, marginLeft: 4 },
+  card:         { backgroundColor: 'rgba(31,31,61,0.6)', borderRadius: Radii.lg, borderWidth: 1, borderColor: Colors.borderSoft, overflow: 'hidden' },
   menuItem:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14 },
   menuLeft:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  menuIcon:     { width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.surfaceHigh, alignItems: 'center', justifyContent: 'center' },
-  menuLabel:    { color: Colors.text, fontSize: 14 },
+  menuIcon:     { width: 34, height: 34, borderRadius: 10, backgroundColor: Colors.primary + '22', alignItems: 'center', justifyContent: 'center' },
+  menuLabel:    { color: Colors.text, fontSize: 14, fontWeight: '600' },
   menuRight:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  menuValue:    { color: Colors.textMuted, fontSize: 13 },
-  divider:      { height: 1, backgroundColor: Colors.border, marginLeft: 58 },
-  logoutBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: Colors.danger + '44', marginTop: 8 },
-  logoutText:   { color: Colors.danger, fontWeight: '600', fontSize: 15 },
-  version:      { textAlign: 'center', color: Colors.textMuted, fontSize: 12, marginTop: 24 },
+  menuValue:    { color: Colors.textMuted, fontSize: 13, fontWeight: '500' },
+  divider:      { height: 1, backgroundColor: Colors.borderSoft, marginLeft: 60 },
+  logoutBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, borderRadius: Radii.lg, borderWidth: 1, borderColor: Colors.danger + '44', marginTop: 8 },
+  logoutText:   { color: Colors.danger, fontWeight: '700', fontSize: 14, letterSpacing: 0.2 },
+  version:      { textAlign: 'center', color: Colors.textMuted, fontSize: 12, marginTop: 24, fontWeight: '500' },
   // Modal
-  overlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  pickerCard:   { backgroundColor: Colors.surface, borderRadius: 20, padding: 28, width: '80%', alignItems: 'center' },
-  pickerTitle:  { color: Colors.text, fontSize: 17, fontWeight: '700', marginBottom: 28 },
+  overlay:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
+  pickerCard:   { backgroundColor: Colors.surface, borderRadius: Radii.xxl, padding: 28, width: '85%', alignItems: 'center', borderWidth: 1, borderColor: Colors.borderSoft },
+  pickerTitle:  { color: Colors.text, fontSize: 17, fontWeight: '800', marginBottom: 28, letterSpacing: -0.2 },
   pickerRow:    { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 28 },
   pickerCol:    { alignItems: 'center', gap: 14 },
   pickerColon:  { color: Colors.text, fontSize: 30, fontWeight: '700', marginBottom: 4 },
-  pickerVal:    { color: Colors.text, fontSize: 30, fontWeight: '700', minWidth: 54, textAlign: 'center' },
-  saveBtn:      { borderRadius: 12, overflow: 'hidden', width: '100%' },
+  pickerVal:    { color: Colors.text, fontSize: 30, fontWeight: '800', minWidth: 54, textAlign: 'center', letterSpacing: -0.6 },
+  saveBtn:      { borderRadius: Radii.lg, overflow: 'hidden', width: '100%' },
   saveBtnInner: { paddingVertical: 14, alignItems: 'center' },
-  saveBtnText:  { color: '#fff', fontWeight: '700', fontSize: 16 },
+  saveBtnText:  { color: '#fff', fontWeight: '800', fontSize: 16, letterSpacing: 0.2 },
 });

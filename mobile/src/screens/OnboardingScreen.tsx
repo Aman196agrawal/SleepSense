@@ -1,28 +1,35 @@
-import React, { useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useRef, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, Dimensions, TouchableOpacity, NativeScrollEvent, NativeSyntheticEvent, Animated, Easing } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../theme/colors';
+import { Colors, Radii, Spacing } from '../theme';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParams } from '../navigation/AuthNavigator';
+import AuroraBackground from '../components/AuroraBackground';
+import GradientButton from '../components/GradientButton';
 
 const { width } = Dimensions.get('window');
 
-const slides = [
+type Slide = { icon: keyof typeof Ionicons.glyphMap; title: string; body: string; accent: string };
+
+const slides: Slide[] = [
   {
-    icon: 'moon',
+    icon:  'moon',
     title: 'Track Your Sleep',
-    body: 'Simply place your phone nearby. SleepSense records and analyses your sleep all night — no extra hardware needed.',
+    body:  'Place your phone nearby. SleepSense quietly records and analyses every night — no extra hardware needed.',
+    accent:'#A78BFA',
   },
   {
-    icon: 'analytics',
+    icon:  'pulse',
     title: 'Smart Sound Detection',
-    body: 'Loudness-based detection tags each segment as snoring, breathing or silence and computes a Sleep Quality Score (0–100) each morning. CNN-based classification is coming in a future release.',
+    body:  'Loudness-based detection tags each segment as snoring, breathing or silence and computes a Sleep Quality Score by morning.',
+    accent:'#F0ABFC',
   },
   {
-    icon: 'sunny',
+    icon:  'sunny',
     title: 'Wake Up Better',
-    body: 'Get personalised tips based on your patterns. See trends, set goals, and sleep your way to a healthier life.',
+    body:  'Get personalised tips from your patterns. See trends, set goals, and sleep your way to a healthier life.',
+    accent:'#FBBF24',
   },
 ];
 
@@ -48,61 +55,101 @@ export default function OnboardingScreen({ navigation }: Props) {
   };
 
   return (
-    <LinearGradient colors={['#0A1628', '#112240']} style={styles.container}>
-      <TouchableOpacity style={styles.skipTop} onPress={() => navigation.replace('Login')}>
-        <Text style={styles.skipText}>Skip</Text>
-      </TouchableOpacity>
-
-      <FlatList
-        ref={ref}
-        data={slides}
-        horizontal
-        pagingEnabled
-        scrollEnabled
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(_, i) => String(i)}
-        onMomentumScrollEnd={onMomentumScrollEnd}
-        renderItem={({ item }) => (
-          <View style={styles.slide}>
-            <View style={styles.iconWrap}>
-              <Ionicons name={item.icon as any} size={72} color={Colors.primary} />
-            </View>
-            <Text style={styles.title}>{item.title}</Text>
-            <Text style={styles.body}>{item.body}</Text>
+    <AuroraBackground style={{ flex: 1 }} intensity="bold">
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={styles.topRow}>
+          <View style={styles.brandRow}>
+            <View style={styles.brandMark}><Ionicons name="moon" size={14} color={Colors.primary} /></View>
+            <Text style={styles.brandText}>SleepSense</Text>
           </View>
-        )}
-      />
-
-      <View style={styles.dots}>
-        {slides.map((_, i) => (
-          <TouchableOpacity key={i} onPress={() => goTo(i)}>
-            <View style={[styles.dot, i === index && styles.dotActive]} />
+          <TouchableOpacity style={styles.skip} onPress={() => navigation.replace('Login')}>
+            <Text style={styles.skipText}>Skip</Text>
           </TouchableOpacity>
-        ))}
-      </View>
+        </View>
 
-      <TouchableOpacity style={styles.btn} onPress={next}>
-        <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.btnInner}>
-          <Text style={styles.btnText}>{index < slides.length - 1 ? 'Next' : 'Get Started'}</Text>
-          <Ionicons name="arrow-forward" size={18} color="#fff" />
-        </LinearGradient>
-      </TouchableOpacity>
-    </LinearGradient>
+        <FlatList
+          ref={ref}
+          data={slides}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(_, i) => String(i)}
+          onMomentumScrollEnd={onMomentumScrollEnd}
+          renderItem={({ item }) => <Slide slide={item} />}
+        />
+
+        <View style={styles.dots}>
+          {slides.map((_, i) => (
+            <TouchableOpacity key={i} onPress={() => goTo(i)} hitSlop={8}>
+              <View style={[styles.dot, i === index && styles.dotActive]} />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.btnWrap}>
+          <GradientButton
+            title={index < slides.length - 1 ? 'Continue' : 'Get Started'}
+            icon="arrow-forward"
+            onPress={next}
+            size="lg"
+          />
+        </View>
+      </SafeAreaView>
+    </AuroraBackground>
   );
 }
 
+const Slide = ({ slide }: { slide: Slide }) => {
+  const float = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(float, { toValue: 1, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(float, { toValue: 0, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    ).start();
+  }, [float]);
+  const translateY = float.interpolate({ inputRange: [0, 1], outputRange: [0, -10] });
+
+  return (
+    <View style={styles.slide}>
+      <Animated.View style={[styles.iconOuter, { transform: [{ translateY }], shadowColor: slide.accent }]}>
+        <View style={[styles.iconInner, { backgroundColor: slide.accent + '1A', borderColor: slide.accent + '44' }]}>
+          <View style={[styles.iconCore, { backgroundColor: slide.accent + '26' }]}>
+            <Ionicons name={slide.icon} size={64} color={slide.accent} />
+          </View>
+        </View>
+      </Animated.View>
+      <Text style={styles.title}>{slide.title}</Text>
+      <Text style={styles.body}>{slide.body}</Text>
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  skipTop:   { position: 'absolute', top: 56, right: 24, zIndex: 10, padding: 8 },
-  skipText:  { color: Colors.textMuted, fontSize: 14 },
-  slide:     { width, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, paddingTop: 80 },
-  iconWrap:  { width: 120, height: 120, borderRadius: 60, backgroundColor: Colors.surfaceHigh, alignItems: 'center', justifyContent: 'center', marginBottom: 40 },
-  title:     { fontSize: 28, fontWeight: '800', color: Colors.text, textAlign: 'center', marginBottom: 16 },
-  body:      { fontSize: 16, color: Colors.textSub, textAlign: 'center', lineHeight: 26 },
-  dots:      { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingBottom: 24, gap: 4 },
-  dot:       { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.border },
-  dotActive: { backgroundColor: Colors.primary, width: 24 },
-  btn:       { marginHorizontal: 32, marginBottom: 20, borderRadius: 14, overflow: 'hidden' },
-  btnInner:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
-  btnText:   { color: '#fff', fontWeight: '700', fontSize: 16 },
+  topRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingTop: 12 },
+  brandRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  brandMark:  { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.primary + '22', borderWidth: 1, borderColor: Colors.primary + '55', alignItems: 'center', justifyContent: 'center' },
+  brandText:  { color: Colors.text, fontSize: 14, fontWeight: '700', letterSpacing: -0.2 },
+  skip:       { padding: 8 },
+  skipText:   { color: Colors.textSub, fontSize: 14, fontWeight: '600' },
+
+  slide:      { width, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36 },
+  iconOuter:  {
+    width: 200, height: 200, borderRadius: 100,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 48,
+    shadowOpacity: 0.4, shadowRadius: 30, shadowOffset: { width: 0, height: 0 },
+    elevation: 14,
+  },
+  iconInner:  { width: 168, height: 168, borderRadius: 84, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  iconCore:   { width: 124, height: 124, borderRadius: 62, alignItems: 'center', justifyContent: 'center' },
+  title:      { fontSize: 32, fontWeight: '800', color: Colors.text, textAlign: 'center', marginBottom: 16, letterSpacing: -0.8 },
+  body:       { fontSize: 15, color: Colors.textSub, textAlign: 'center', lineHeight: 24, maxWidth: 320 },
+
+  dots:       { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 20, gap: 6 },
+  dot:        { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.border },
+  dotActive:  { backgroundColor: Colors.primary, width: 24, height: 6, borderRadius: 3 },
+
+  btnWrap:    { paddingHorizontal: 32, paddingBottom: Spacing.x6 },
 });
