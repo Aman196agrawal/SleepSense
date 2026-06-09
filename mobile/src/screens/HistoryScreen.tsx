@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { HistoryStackParams } from '../navigation/MainNavigator';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +12,9 @@ import TrendChart from '../components/TrendChart';
 const PERIODS = ['7d', '30d', '90d'];
 const { width } = Dimensions.get('window');
 
-export default function HistoryScreen({ navigation }: any) {
+type Props = NativeStackScreenProps<HistoryStackParams, 'HistoryMain'>;
+
+export default function HistoryScreen({ navigation }: Props) {
   const [period,     setPeriod]     = useState('30d');
   const [trends,     setTrends]     = useState<any>(null);
   const [sessions,   setSessions]   = useState<any[]>([]);
@@ -192,7 +196,7 @@ export default function HistoryScreen({ navigation }: any) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.sessionDate}>
-                  {new Date(s.started_at).toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {new Date(s.started_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                 </Text>
                 <Text style={styles.sessionSub}>
                   {Math.floor((s.duration_minutes ?? 0) / 60)}h {(s.duration_minutes ?? 0) % 60}m · Snoring {s.snoring_percentage}%

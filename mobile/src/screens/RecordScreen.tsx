@@ -9,7 +9,9 @@ import {
   AudioModule,
   setAudioModeAsync,
 } from 'expo-audio';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { Colors, Radii, Spacing, Elevation, Gradients } from '../theme';
+import type { MainTabParams } from '../navigation/MainNavigator';
 import AuroraBackground from '../components/AuroraBackground';
 import GlassCard from '../components/GlassCard';
 import * as AnalyticsAPI from '../api/analytics.api';
@@ -43,7 +45,9 @@ const METER_POLL_MS    = 200;
 
 type Phase = 'idle' | 'recording' | 'stopping';
 
-export default function RecordScreen({ navigation }: any) {
+type Props = BottomTabScreenProps<MainTabParams, 'Record'>;
+
+export default function RecordScreen({ navigation }: Props) {
   const [phase, setPhase]       = useState<Phase>('idle');
   const [elapsed, setElapsed]   = useState(0);
   const [intensity, setIntensity] = useState(0);
@@ -165,10 +169,10 @@ export default function RecordScreen({ navigation }: any) {
       const audioUri = (recorder as any).uri as string | undefined;
       if (audioUri) {
         IngestionAPI.uploadBinaryChunk(sid, audioUri, idx, CHUNK_SECONDS)
-          .catch(err => console.warn('binary upload failed', err));
+          .catch(err => console.error('binary upload failed', err));
       }
     } catch (err) {
-      console.warn('recorder cycle failed', err);
+      console.error('recorder cycle failed', err);
     }
 
     chunkIdxRef.current += 1;
@@ -346,7 +350,7 @@ export default function RecordScreen({ navigation }: any) {
         Alert.alert('Privacy Session Saved', 'Audio stayed on your device. No data was uploaded.');
       }
     } catch (err) {
-      console.warn('endSession failed', err);
+      console.error('endSession failed', err);
       Alert.alert('Saved', 'Session ended.');
     }
 

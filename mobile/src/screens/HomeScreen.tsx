@@ -3,8 +3,17 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { CompositeNavigationProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Colors, Gradients, Radii, Spacing, Elevation } from '../theme';
 import { useAuthStore } from '../store/authStore';
+import type { HomeStackParams, MainTabParams } from '../navigation/MainNavigator';
+
+type HomeNav = CompositeNavigationProp<
+  NativeStackNavigationProp<HomeStackParams, 'HomeMain'>,
+  BottomTabNavigationProp<MainTabParams>
+>;
 import * as AnalyticsAPI from '../api/analytics.api';
 import ScoreRing      from '../components/ScoreRing';
 import StatCard       from '../components/StatCard';
@@ -15,7 +24,7 @@ import GradientButton from '../components/GradientButton';
 import AuroraBackground from '../components/AuroraBackground';
 import Skeleton       from '../components/Skeleton';
 
-export default function HomeScreen({ navigation }: any) {
+export default function HomeScreen({ navigation }: { navigation: HomeNav }) {
   const { user }       = useAuthStore();
   const [session, setSession]     = useState<any>(null);
   const [insights, setInsights]   = useState<any[]>([]);
@@ -90,7 +99,7 @@ export default function HomeScreen({ navigation }: any) {
               <View style={styles.heroLabelRow}>
                 <Text style={styles.overline}>Last Night</Text>
                 <Text style={styles.heroDate}>
-                  {new Date(session.started_at).toLocaleDateString('en-IN', { weekday: 'long', month: 'short', day: 'numeric' })}
+                  {new Date(session.started_at).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
                 </Text>
               </View>
               <View style={{ alignItems: 'center', paddingVertical: 8, marginBottom: 8 }}>

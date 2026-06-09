@@ -5,7 +5,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../theme/colors';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Colors } from '../theme';
+import type { ProfileStackParams } from '../navigation/MainNavigator';
 import * as AuthAPI from '../api/auth.api';
 
 type Option = { label: string; value: string };
@@ -119,7 +121,9 @@ const tag = StyleSheet.create({
   chipText: { color: Colors.text, fontSize: 13 },
 });
 
-export default function HealthProfileScreen({ navigation }: any) {
+type Props = NativeStackScreenProps<ProfileStackParams, 'HealthProfile'>;
+
+export default function HealthProfileScreen({ navigation }: Props) {
   const [loading, setLoading]     = useState(true);
   const [saving, setSaving]       = useState(false);
   const [sleepPos, setSleepPos]   = useState<string | null>(null);

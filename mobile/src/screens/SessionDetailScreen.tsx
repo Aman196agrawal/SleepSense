@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { HomeStackParams } from '../navigation/MainNavigator';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +16,9 @@ import StackedAreaTimeline from '../components/StackedAreaTimeline';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-export default function SessionDetailScreen({ route, navigation }: any) {
+type Props = NativeStackScreenProps<HomeStackParams, 'SessionDetail'>;
+
+export default function SessionDetailScreen({ route, navigation }: Props) {
   const { sessionId } = route.params;
   const [session,  setSession]  = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
@@ -52,7 +56,7 @@ export default function SessionDetailScreen({ route, navigation }: any) {
             </TouchableOpacity>
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.title}>Sleep Report</Text>
-              <Text style={styles.date}>{date.toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+              <Text style={styles.date}>{date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
             </View>
           </View>
 

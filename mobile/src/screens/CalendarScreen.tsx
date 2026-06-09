@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { HistoryStackParams } from '../navigation/MainNavigator';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl,
@@ -41,7 +43,9 @@ type DayEntry = {
 const DAYS_OPTIONS = [30, 90];
 const WEEK_DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
-export default function CalendarScreen({ navigation }: any) {
+type Props = NativeStackScreenProps<HistoryStackParams, 'Calendar'>;
+
+export default function CalendarScreen({ navigation }: Props) {
   const [calendar,   setCalendar]   = useState<DayEntry[]>([]);
   const [days,       setDays]       = useState(90);
   const [loading,    setLoading]    = useState(true);

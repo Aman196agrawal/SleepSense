@@ -5,7 +5,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../theme/colors';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Colors } from '../theme';
+import type { ProfileStackParams } from '../navigation/MainNavigator';
 import * as AnalyticsAPI from '../api/analytics.api';
 
 const GOAL_TYPES = [
@@ -13,7 +15,9 @@ const GOAL_TYPES = [
   { key: 'recording_streak',   label: 'Recording Streak',    icon: 'flame-outline',   unit: 'nights', hint: 'Consecutive nights (e.g. 7)' },
 ];
 
-export default function GoalsScreen({ navigation }: any) {
+type Props = NativeStackScreenProps<ProfileStackParams, 'Goals'>;
+
+export default function GoalsScreen({ navigation }: Props) {
   const [goals,      setGoals]      = useState<any[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);

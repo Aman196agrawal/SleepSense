@@ -10,6 +10,7 @@ import { Colors, Gradients, Radii } from '../theme';
 import AuroraBackground from '../components/AuroraBackground';
 import { useAuthStore } from '../store/authStore';
 import { useNavigation } from '@react-navigation/native';
+import type { ProfileStackNav } from '../navigation/MainNavigator';
 import { scheduleBedtimeReminder } from '../api/notifications';
 
 const MenuItem = ({ icon, label, value, onPress }: any) => (
@@ -50,7 +51,7 @@ function displayTime(hhmm: string): string {
 
 export default function ProfileScreen() {
   const { user, logout, updateProfile } = useAuthStore();
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<ProfileStackNav>();
 
   const [showPicker, setShowPicker]     = useState(false);
   const [pickerH, setPickerH]           = useState(10);
