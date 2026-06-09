@@ -313,9 +313,60 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Notification Service ─────────────────────────────────────────────────────
+  notification-service:
+    build: ./services/notification-service
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    environment:
+      <<: *common-env
+      AUTH_SERVICE_URL: http://auth-service:8001
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_GROUP_ID: notification-service
+    volumes:
+      - notification_data:/app/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Insight Engine ────────────────────────────────────────────────────────────
+  insight-engine:
+    build: ./services/insight-engine
+    restart: unless-stopped
+    ports:
+      - "8006:8006"
+    environment:
+      <<: *common-env
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_GROUP_ID: insight-engine
+    volumes:
+      - insight_data:/app/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
   kafka_data:
   influxdb_data:
   minio_data:
+  notification_data:
+  insight_data:
