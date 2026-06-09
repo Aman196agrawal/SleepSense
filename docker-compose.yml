@@ -1,5 +1,3 @@
-version: '3.9'
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Local development stack — mirrors the production architecture:
 #   PostgreSQL  → primary relational store
@@ -7,10 +5,22 @@ version: '3.9'
 #   Kafka       → async event bus (chunk.uploaded → ML inference)
 #   InfluxDB    → per-chunk snore event time-series
 #   MinIO       → S3-compatible object store for audio files
+#
+# Required env vars (defined in your .env, no defaults in this file):
+#   SECRET_KEY        — JWT signing secret, must match across services
+#   INFLUXDB_TOKEN    — Influx admin token (used by influxdb + analytics)
+#
+# Optional env vars (safe defaults shown):
+#   MINIO_ROOT_USER     — MinIO root username     (default: minioadmin)
+#   MINIO_ROOT_PASSWORD — MinIO root password     (default: minioadmin)
+#   INTERNAL_API_SECRET — Service-to-service auth (default: empty = disabled)
 # ─────────────────────────────────────────────────────────────────────────────
 
 x-common-env: &common-env
-  SECRET_KEY: ${SECRET_KEY:-sleepsense-dev-secret-key-32chars!!}
+  # No default — Compose will fail loudly if SECRET_KEY is missing from .env.
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required in .env (>=32 random chars)}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8081,http://localhost:19006,http://localhost:3000}
+  INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
 
 services:
 
@@ -85,8 +95,9 @@ services:
     entrypoint: >
       sh -c "
         kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic audio.chunk.uploaded --partitions 3 --replication-factor 1 &&
-        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic session.ended       --partitions 3 --replication-factor 1 &&
-        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic ml.inference.result --partitions 3 --replication-factor 1 &&
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic session.ended        --partitions 3 --replication-factor 1 &&
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic analysis.complete    --partitions 3 --replication-factor 1 &&
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic notification.send    --partitions 3 --replication-factor 1 &&
         echo 'Kafka topics created.'
       "
     restart: "no"
@@ -104,7 +115,7 @@ services:
       DOCKER_INFLUXDB_INIT_ORG: sleepsense
       DOCKER_INFLUXDB_INIT_BUCKET: snore_events
       DOCKER_INFLUXDB_INIT_RETENTION: 0
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: dev-influxdb-token-sleepsense-2024
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:?INFLUXDB_TOKEN is required in .env}
     volumes:
       - influxdb_data:/var/lib/influxdb2
     healthcheck:
@@ -121,10 +132,10 @@ services:
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"   # S3 API
-      - "9001:9001"   # Web console  (http://localhost:9001  admin/minioadmin)
+      - "9001:9001"   # Web console  (http://localhost:9001)
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
       - minio_data:/data
     healthcheck:
@@ -139,9 +150,12 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     entrypoint: >
       sh -c "
-        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
         mc mb --ignore-existing local/audio-chunks &&
         mc mb --ignore-existing local/ml-models &&
         mc anonymous set download local/ml-models &&
@@ -172,6 +186,87 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Audio Ingestion Service ───────────────────────────────────────────────────
+  audio-ingestion-service:
+    build: ./services/audio-ingestion-service
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    environment:
+      <<: *common-env
+      DATABASE_URL: postgresql://postgres:devpassword@postgres:5432/sleepsense_ingestion
+      REDIS_URL: redis://redis:6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      S3_BUCKET: audio-chunks
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_REGION: us-east-1
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8003
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── ML Inference Service ─────────────────────────────────────────────────────
+  ml-inference-service:
+    build: ./services/ml-inference-service
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    environment:
+      <<: *common-env
+      DATABASE_URL: postgresql://postgres:devpassword@postgres:5432/sleepsense_inference
+      REDIS_URL: redis://redis:6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_GROUP_ID: ml-inference-group
+      KAFKA_INPUT_TOPIC: audio.chunk.uploaded
+      KAFKA_OUTPUT_TOPIC: analysis.complete
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:?INFLUXDB_TOKEN is required in .env}
+      INFLUXDB_ORG: sleepsense
+      INFLUXDB_BUCKET: snore_events
+      S3_BUCKET: audio-chunks
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_REGION: us-east-1
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ── Analytics Service ─────────────────────────────────────────────────────────
   analytics-service:
     build: ./services/analytics-service
@@ -183,13 +278,15 @@ services:
       DATABASE_URL: postgresql://postgres:devpassword@postgres:5432/sleepsense
       REDIS_URL: redis://redis:6379
       INFLUXDB_URL: http://influxdb:8086
-      INFLUXDB_TOKEN: dev-influxdb-token-sleepsense-2024
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:?INFLUXDB_TOKEN is required in .env}
       INFLUXDB_ORG: sleepsense
       INFLUXDB_BUCKET: snore_events
+      AUTH_SERVICE_URL: http://auth-service:8001
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_GROUP_ID: analytics-consumer-group
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: audio-chunks
     depends_on:
       postgres:
@@ -201,6 +298,14 @@ services:
       influxdb:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      # Wait for the topic / bucket init jobs so the service doesn't race
+      # against unprovisioned infra on first boot.
+      kafka-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      auth-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]

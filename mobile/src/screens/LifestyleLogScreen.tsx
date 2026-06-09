@@ -98,7 +98,7 @@ function LogRow({ log }: { log: any }) {
   return (
     <View style={lr_s.row}>
       <Text style={lr_s.date}>
-        {new Date(log.logged_date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' })}
+        {new Date(log.logged_date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
       </Text>
       <View style={lr_s.chips}>
         {icons.filter((_, i) => (i === 0 ? log.caffeine_cups > 0 : i === 1 ? log.alcohol_units > 0 : log.exercise_minutes > 0)).map(([icon, label, color]) => (

@@ -51,11 +51,19 @@ Thumbs.db
 *.log
 logs/
 
-# ML artifacts
+# SQLite dev databases (contain hashed passwords, refresh tokens, seeded data)
+services/*/data/*.db
+services/*/data/*.db-journal
+services/*/data/*.db-wal
+services/*/data/*.db-shm
+
+# ML artifacts — trained weights are not committed (use EAS secrets / S3 for the real model)
 *.pt
 *.pth
 *.onnx
 *.tflite
+# Exception: the 8-byte placeholder stub that Metro needs at bundle time
+!mobile/assets/models/snore_classifier.tflite
 mlruns/
 
 # Screenshots (large binary, optional — remove line to include)

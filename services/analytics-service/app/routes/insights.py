@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime
-from fastapi import APIRouter, Depends
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import SessionInsight, SleepSession, LifestyleLog
@@ -74,7 +74,7 @@ def get_insights(
                 "title": pi["title"],
                 "body": pi["body"],
                 "is_read": False,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                 "source": "pattern",
             })
             seen.add(pi["title"])
@@ -94,7 +94,9 @@ def mark_read(
         SessionInsight.id == insight_id,
         SessionInsight.user_id == user_id,
     ).first()
-    if insight:
-        insight.is_read = True
-        db.commit()
+    if not insight:
+        raise HTTPException(status_code=404, detail="Insight not found")
+
+    insight.is_read = True
+    db.commit()
     return {"id": insight_id, "is_read": True}

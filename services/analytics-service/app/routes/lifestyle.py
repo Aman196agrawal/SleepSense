@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -27,24 +27,32 @@ def log_lifestyle(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    existing = db.query(LifestyleLog).filter(
+    log = db.query(LifestyleLog).filter(
         LifestyleLog.user_id == user_id,
         LifestyleLog.logged_date == body.logged_date,
     ).first()
-    if existing:
-        db.delete(existing)
-        db.flush()
 
-    log = LifestyleLog(
-        user_id=user_id,
-        logged_date=body.logged_date,
-        caffeine_cups=body.caffeine_cups,
-        alcohol_units=body.alcohol_units,
-        exercise_minutes=body.exercise_minutes,
-        stress_level=body.stress_level,
-        sleep_aid_used=body.sleep_aid_used,
-    )
-    db.add(log)
+    if log:
+        # Mutate in place so id + created_at remain stable for the row.
+        log.caffeine_cups    = body.caffeine_cups
+        log.alcohol_units    = body.alcohol_units
+        log.exercise_minutes = body.exercise_minutes
+        log.stress_level     = body.stress_level
+        log.sleep_aid_used   = body.sleep_aid_used
+        log.notes            = body.notes
+    else:
+        log = LifestyleLog(
+            user_id=user_id,
+            logged_date=body.logged_date,
+            caffeine_cups=body.caffeine_cups,
+            alcohol_units=body.alcohol_units,
+            exercise_minutes=body.exercise_minutes,
+            stress_level=body.stress_level,
+            sleep_aid_used=body.sleep_aid_used,
+            notes=body.notes,
+        )
+        db.add(log)
+
     db.commit()
     db.refresh(log)
     return _log_dict(log)
@@ -56,7 +64,7 @@ def get_logs(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    since = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)).strftime("%Y-%m-%d")
     logs = (
         db.query(LifestyleLog)
         .filter(LifestyleLog.user_id == user_id, LifestyleLog.logged_date >= since)
@@ -103,5 +111,6 @@ def _log_dict(log: LifestyleLog) -> dict:
         "exercise_minutes": log.exercise_minutes,
         "stress_level": log.stress_level,
         "sleep_aid_used": log.sleep_aid_used,
+        "notes": log.notes,
         "created_at": log.created_at.isoformat(),
     }

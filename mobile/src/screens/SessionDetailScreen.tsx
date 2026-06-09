@@ -1,15 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { HomeStackParams } from '../navigation/MainNavigator';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../theme/colors';
+import { Colors, Radii } from '../theme';
+import AuroraBackground from '../components/AuroraBackground';
+import GlassCard from '../components/GlassCard';
 import * as AnalyticsAPI from '../api/analytics.api';
 import ScoreRing    from '../components/ScoreRing';
 import StatCard     from '../components/StatCard';
-import TimelineChart from '../components/TimelineChart';
 import InsightCard  from '../components/InsightCard';
+import ClassDonut          from '../components/ClassDonut';
+import StackedAreaTimeline from '../components/StackedAreaTimeline';
 
-export default function SessionDetailScreen({ route, navigation }: any) {
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
+type Props = NativeStackScreenProps<HomeStackParams, 'SessionDetail'>;
+
+export default function SessionDetailScreen({ route, navigation }: Props) {
   const { sessionId } = route.params;
   const [session,  setSession]  = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
@@ -38,22 +47,23 @@ export default function SessionDetailScreen({ route, navigation }: any) {
   const date = new Date(session.started_at);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg }}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color={Colors.text} />
-          </TouchableOpacity>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.title}>Sleep Report</Text>
-            <Text style={styles.date}>{date.toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+    <AuroraBackground style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+              <Ionicons name="arrow-back" size={20} color={Colors.text} />
+            </TouchableOpacity>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.title}>Sleep Report</Text>
+              <Text style={styles.date}>{date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+            </View>
           </View>
-        </View>
 
-        {/* Score */}
-        <View style={styles.scoreWrap}>
-          <ScoreRing score={session.sleep_quality_score ?? 0} grade={session.sleep_quality_grade} size={180} />
-        </View>
+          {/* Score */}
+          <GlassCard variant="hero" glow="violet" radius={Radii.xxl} padding={24} style={{ alignItems: 'center', marginBottom: 20 }}>
+            <ScoreRing score={session.sleep_quality_score ?? 0} grade={session.sleep_quality_grade} size={200} />
+          </GlassCard>
 
         {/* Stats */}
         <View style={styles.statsGrid}>
@@ -63,19 +73,66 @@ export default function SessionDetailScreen({ route, navigation }: any) {
           <StatCard icon="trending-up-outline" label="Events / hr"       value={`${session.snore_events_per_hour ?? 0}`} color={Colors.fair} />
         </View>
 
-        {/* Timeline */}
+        {/* Score Breakdown (FR-SCORE-002) */}
+        {session.sleep_quality_score !== undefined && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Score Breakdown</Text>
+            <View style={styles.breakdownCard}>
+              {(() => {
+                const snoreRatio   = (session.snoring_percentage ?? 0) / 100;
+                const snoringImpact  = Math.round(snoreRatio * 40);
+                const intensityPenalty = Math.round((session.avg_snore_intensity ?? 0) / 100 * 25);
+                const hours          = (session.duration_minutes ?? 0) / 60;
+                const interruptions  = Math.round((session.snore_events_per_hour ?? 0) * hours);
+                const interruptionPenalty = Math.min(interruptions * 2, 20);
+                const durationPenalty = session.duration_minutes < 360
+                  ? Math.round(Math.max(0, (360 - (session.duration_minutes ?? 0)) / 360 * 15))
+                  : 0;
+
+                const items = [
+                  { label: 'Snoring time',   penalty: snoringImpact,    desc: `${session.snoring_percentage ?? 0}% of the night` },
+                  { label: 'Snore intensity',penalty: intensityPenalty, desc: `Avg intensity ${Math.round(session.avg_snore_intensity ?? 0)}` },
+                  { label: 'Interruptions',  penalty: interruptionPenalty, desc: `~${interruptions} events` },
+                  { label: 'Sleep duration', penalty: durationPenalty,  desc: durationPenalty > 0 ? 'Less than 6 hours' : 'Sufficient duration' },
+                ];
+
+                return items.map(item => (
+                  <View key={item.label} style={styles.breakdownRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.breakdownLabel}>{item.label}</Text>
+                      <Text style={styles.breakdownDesc}>{item.desc}</Text>
+                    </View>
+                    <Text style={[styles.breakdownPenalty, { color: item.penalty > 0 ? Colors.danger : Colors.excellent }]}>
+                      {item.penalty > 0 ? `-${item.penalty}` : '0'} pts
+                    </Text>
+                  </View>
+                ));
+              })()}
+            </View>
+          </View>
+        )}
+
+        {/* Sound Distribution — donut */}
         {timeline.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Snoring Timeline</Text>
-            <View style={styles.legendRow}>
-              {[['#F43F5E','Snoring'],['#3D8EF0','Breathing'],['#F59E0B','Ambient'],['#1E3A5F','Silence']].map(([c, l]) => (
-                <View key={l} style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: c }]} />
-                  <Text style={styles.legendText}>{l}</Text>
-                </View>
-              ))}
+            <Text style={styles.sectionTitle}>Sound Distribution</Text>
+            <View style={styles.chartCard}>
+              <ClassDonut buckets={timeline} size={150} />
             </View>
-            <TimelineChart buckets={timeline} height={110} />
+          </View>
+        )}
+
+        {/* Sound Composition Over Night — stacked area */}
+        {timeline.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Sound Composition Over Night</Text>
+            <View style={styles.chartCard}>
+              <StackedAreaTimeline
+                buckets={timeline}
+                width={SCREEN_WIDTH - 72}
+                height={150}
+              />
+            </View>
           </View>
         )}
 
@@ -88,23 +145,27 @@ export default function SessionDetailScreen({ route, navigation }: any) {
             ))}
           </View>
         )}
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </AuroraBackground>
   );
 }
 
 const styles = StyleSheet.create({
   center:      { flex: 1, backgroundColor: Colors.bg, justifyContent: 'center', alignItems: 'center' },
-  container:   { padding: 20, paddingBottom: 40 },
-  header:      { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
-  title:       { color: Colors.text, fontSize: 18, fontWeight: '700' },
-  date:        { color: Colors.textSub, fontSize: 13, marginTop: 2 },
+  container:   { padding: 20, paddingBottom: 120 },
+  header:      { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
+  backBtn:     { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(167,139,250,0.10)', borderWidth: 1, borderColor: Colors.borderSoft, alignItems: 'center', justifyContent: 'center' },
+  title:       { color: Colors.text, fontSize: 20, fontWeight: '800', letterSpacing: -0.4 },
+  date:        { color: Colors.textSub, fontSize: 13, marginTop: 2, fontWeight: '500' },
   scoreWrap:   { alignItems: 'center', marginBottom: 24 },
-  statsGrid:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
-  section:     { marginBottom: 24 },
-  sectionTitle:{ color: Colors.text, fontWeight: '700', fontSize: 16, marginBottom: 12 },
-  legendRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 8 },
-  legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot:   { width: 8, height: 8, borderRadius: 4 },
-  legendText:  { color: Colors.textMuted, fontSize: 11 },
+  statsGrid:   { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+  section:     { marginBottom: 22 },
+  sectionTitle:{ color: Colors.text, fontWeight: '800', fontSize: 16, marginBottom: 12, letterSpacing: -0.2 },
+  chartCard:        { backgroundColor: 'rgba(167,139,250,0.06)', borderRadius: Radii.xl, padding: 16, borderWidth: 1, borderColor: Colors.borderSoft },
+  breakdownCard:    { backgroundColor: 'rgba(167,139,250,0.06)', borderRadius: Radii.lg, padding: 16, borderWidth: 1, borderColor: Colors.borderSoft, gap: 12 },
+  breakdownRow:     { flexDirection: 'row', alignItems: 'center' },
+  breakdownLabel:   { color: Colors.text, fontWeight: '700', fontSize: 13, letterSpacing: -0.2 },
+  breakdownDesc:    { color: Colors.textMuted, fontSize: 11, marginTop: 2, fontWeight: '500' },
+  breakdownPenalty: { fontWeight: '800', fontSize: 14, minWidth: 52, textAlign: 'right', letterSpacing: -0.2 },
 });

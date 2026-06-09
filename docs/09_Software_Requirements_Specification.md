@@ -9,8 +9,8 @@
 | Field | Value |
 |-------|-------|
 | Document ID | SRS-SLEEPSENSE-001 |
-| Version | 1.0 |
-| Status | Draft for Review |
+| Version | 2.0 |
+| Status | Updated |
 | Prepared by | SleepSense Engineering Team |
 | Reviewed by | — |
 | Date | May 2026 |
@@ -21,6 +21,7 @@
 |---------|------|--------|---------|
 | 0.1 | May 2026 | Engineering Team | Initial draft |
 | 1.0 | May 2026 | Engineering Team | Consolidated from all design docs |
+| 2.0 | May 2026 | Engineering Team | Fixed 10 specification errors: Kafka topic ownership, Redis key pattern, rate-limit wording, MFCC glossary, pagination contract, Apple endpoint table entry, cross-service insight rule gap, architecture pipeline note, snoring_change definition, SAR-001 scope clarification |
 
 ---
 
@@ -224,7 +225,7 @@ Requirements use MoSCoW prioritization:
 **Acceptance Criteria:**
 - Returns `access_token`, `refresh_token`, `expires_in: 900` on success.
 - Failed login returns HTTP 401 with a **generic** message (no user enumeration).
-- After 10 failed attempts within 15 minutes from the same IP, endpoint returns HTTP 429 (Too Many Requests) for the remainder of the 15-minute window.
+- After 10 attempts (successful or not) within 15 minutes from the same IP, endpoint returns HTTP 429 (Too Many Requests) for the remainder of the 15-minute window. All attempts are counted — counting only failures would allow user enumeration via timing differences.
 - Rate limit key stored in Redis: `ratelimit:login:{ip_address}`, TTL 15 minutes.
 
 #### FR-AUTH-003 — Token Refresh
@@ -303,6 +304,8 @@ Requirements use MoSCoW prioritization:
 - Kafka message published to topic `audio.chunk.uploaded` with: `chunk_id`, `session_id`, `user_id`, `s3_key`, `chunk_index`, `duration_seconds`, `timestamp`.
 - Returns HTTP 202 Accepted: `{chunk_id, chunk_index, status: "queued"}`.
 - Rate limit: 120 chunk uploads per hour per user.
+
+> **Implementation note (current build):** The sample build uses a simplified JSON-only upload path where the mobile app sends pre-analyzed stats (`chunk_index`, `avg_intensity`, `dominant_class`, `snore_event_count`) as a JSON body to the Analytics Service directly, bypassing the Audio Ingestion → S3 → Kafka → ML Inference pipeline. No raw audio is stored in this mode. The full binary upload pipeline described above is the production target.
 
 #### FR-REC-003 — Background Recording on Mobile
 **Priority:** M
@@ -461,8 +464,8 @@ Requirements use MoSCoW prioritization:
 **Acceptance Criteria:**
 - Endpoint: `GET /sessions?cursor=<token>&limit=20&from=<date>&to=<date>`.
 - Each item: `{id, started_at, duration_minutes, sleep_quality_score, sleep_quality_grade, snoring_percentage}`.
-- Cursor-based pagination (not offset-based).
-- Date range filter supported.
+- Cursor-based pagination: response includes `{sessions, next_cursor, has_more}`. `next_cursor` is an opaque token encoding the last returned `started_at` + `id`. No `total_count` field — total counts are incompatible with cursor pagination and require a full-table scan.
+- Date range filter (`from`, `to`) supported; both are optional ISO 8601 dates.
 
 #### FR-HIST-002 — Trend Chart (7 / 30 / 90 Days)
 **Priority:** M
@@ -495,6 +498,8 @@ Requirements use MoSCoW prioritization:
 **Acceptance Criteria:**
 - Endpoint: `GET /analytics/weekly-summary`.
 - Returns: `{week_start, week_end, nights_recorded, avg_quality_score, avg_snoring_percentage, avg_sleep_duration_minutes, best_night: {date, score}, worst_night: {date, score}, vs_previous_week: {quality_change, snoring_change}}`.
+- `quality_change`: current week `avg_quality_score` minus previous week `avg_quality_score` (positive = improving).
+- `snoring_change`: current week `avg_snoring_percentage` minus previous week `avg_snoring_percentage` in percentage points (positive = more snoring, negative = less snoring).
 - Shows week-over-week delta with up/down arrow and percentage.
 
 #### FR-HIST-006 — CSV Export
@@ -514,7 +519,7 @@ Requirements use MoSCoW prioritization:
 **Description:** After each session, 2–3 personalized tips are generated based on detected patterns.
 **Acceptance Criteria:**
 - Insight engine applies 5 core rules (evaluated in priority order):
-  1. **POSITIONAL_SNORING:** If peak snoring correlates with back-sleeping (via user's declared sleep position) → suggest side-sleeping.
+  1. **POSITIONAL_SNORING:** If peak snoring correlates with back-sleeping (via user's declared sleep position) → suggest side-sleeping. The Insight Engine must fetch `sleep_position` from the Auth Service via `GET /users/{user_id}/health-profile` (internal service-to-service call); direct DB access is forbidden per SAR-004.
   2. **ALCOHOL_CORRELATION:** If user logged alcohol AND snore_score > 70 same night → show alcohol-snoring link.
   3. **CHRONIC_SNORING:** If snore_score > 60 for 5+ consecutive nights → suggest consulting a sleep specialist.
   4. **IMPROVEMENT_TREND:** If average score improved > 15 points over 7 days → positive reinforcement.
@@ -779,7 +784,7 @@ Requirements use MoSCoW prioritization:
 
 | ID | Requirement |
 |----|-------------|
-| SAR-001 | Each microservice follows a 5-layer internal pattern: API Routes → Service Layer → Repository Layer → Domain Layer → Infrastructure Layer. |
+| SAR-001 | Each microservice targets a 5-layer internal pattern: API Routes → Service Layer → Repository Layer → Domain Layer → Infrastructure Layer. The current sample build uses a simplified 2-layer layout (Routes → Models) and will be refactored to the full 5-layer pattern as services mature. New services must be built to the 5-layer target from the start. |
 | SAR-002 | All services expose health check endpoints: `GET /health` (liveness) and `GET /ready` (readiness). |
 | SAR-003 | Inter-service communication: REST (synchronous, user-facing) + Apache Kafka (asynchronous, ML pipeline). |
 | SAR-004 | No direct database sharing between services. Each service owns its data; cross-service reads go via API. |
@@ -791,7 +796,7 @@ Requirements use MoSCoW prioritization:
 |-------|----------|----------|-------------|
 | `audio.chunk.uploaded` | Audio Ingestion | ML Inference | New chunk ready for analysis |
 | `analysis.complete` | ML Inference | Analytics | Chunk analysis results |
-| `session.ended` | Audio Ingestion | Analytics | Session finalized |
+| `session.ended` | Analytics | Insight Engine, Notification | Session finalized (emitted by Analytics when `POST /sessions/{id}/end` is called; Audio Ingestion is not involved in session lifecycle) |
 | `insights.generate` | Analytics | Insight Engine | Trigger insight generation |
 | `notification.send` | Insight Engine, Analytics | Notification Service | Trigger push/email |
 
@@ -834,7 +839,7 @@ Requirements use MoSCoW prioritization:
 
 | Key Pattern | Value | TTL | Purpose |
 |-------------|-------|-----|---------|
-| `refresh:{user_id}:{device_id}` | JSON {token_hash, issued_at, expires_at, device_info} | 30 days | Refresh token store |
+| `rt:{token}` | `user_id` (string) | 30 days | Refresh token store — keyed by the token itself for O(1) lookup and rotation; old token is deleted on use (rotation). If per-device revocation is required in future, migrate to `rt:{user_id}:{device_id}:{token_hash}`. |
 | `ratelimit:login:{ip_address}` | Integer counter | 15 minutes | Login rate limiting |
 | `session:status:{session_id}` | JSON {status, processed_chunks, total_chunks, last_updated} | 24 hours | Session processing cache |
 | `user:prefs:{user_id}` | JSON string of user preferences | 1 hour | Preferences cache |
@@ -885,6 +890,7 @@ sleepsense-ml-{env}/
 | POST | `/auth/refresh` | No | Rotate access token |
 | POST | `/auth/logout` | Yes | Invalidate refresh token |
 | POST | `/auth/social/google` | No | Google OAuth2 |
+| POST | `/auth/social/apple` | No | Apple Sign-In (required for iOS App Store — FR-AUTH-006, COMP-012) |
 | POST | `/auth/forgot-password` | No | Send reset email |
 | POST | `/auth/reset-password` | No | Apply new password |
 | GET | `/users/me` | Yes | Get own profile |
@@ -1245,7 +1251,7 @@ The following are explicitly **deferred to Phase 2 or later**:
 | EfficientNet-B0 | A CNN architecture optimized for accuracy-efficiency trade-off; used for snore classification |
 | Insight | A personalized sleep tip or warning generated after each session |
 | MAU | Monthly Active Users |
-| MFC Cepstral Coefficient | A feature representing the short-term power spectrum of audio, used by the intensity regressor |
+| Mel-Frequency Cepstral Coefficient (MFCC) | A feature representing the short-term power spectrum of audio on the mel scale, used by the intensity regressor |
 | Mel Spectrogram | A visual representation of audio frequency content over time, mapped to the mel scale; the CNN input |
 | On-device Mode | TFLite inference running on the phone; audio never uploaded to the cloud |
 | Refresh Token | Long-lived token (30 days) used to obtain new access tokens without re-login |
@@ -1258,4 +1264,4 @@ The following are explicitly **deferred to Phase 2 or later**:
 
 ---
 
-*End of SRS v1.0 · SleepSense · May 2026*
+*End of SRS v2.0 · SleepSense · May 2026*

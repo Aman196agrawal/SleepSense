@@ -1,16 +1,16 @@
 import React from 'react';
 import { View, Text, ScrollView } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
-import { Colors } from '../theme/colors';
+import { Colors } from '../theme';
 
 interface Bucket { index: number; offset_minutes: number; avg_intensity: number; dominant_class: string; }
 interface Props  { buckets: Bucket[]; height?: number; }
 
 const classColor = (cls: string) => {
-  if (cls === 'snoring')   return '#F43F5E';
-  if (cls === 'breathing') return '#3D8EF0';
-  if (cls === 'ambient')   return '#F59E0B';
-  return '#1E3A5F';
+  if (cls === 'snoring')   return Colors.accent;
+  if (cls === 'breathing') return Colors.secondary;
+  if (cls === 'ambient')   return Colors.amber;
+  return Colors.surfaceHigh;
 };
 
 export default function TimelineChart({ buckets, height = 100 }: Props) {

@@ -1,8 +1,9 @@
 @echo off
 title SleepSense - Auth Service (Port 8001)
-cd /d "C:\Users\BIT\OneDrive\Desktop\Nitu Chacha\SnoreLab\services\auth-service"
+cd /d "%~dp0services\auth-service"
 set DATABASE_URL=sqlite:///./data/auth.db
-set SECRET_KEY=sleepsense-dev-secret-key-32chars!!
+REM Local-dev convenience secret. Override via .env for any shared/remote use.
+set SECRET_KEY=local-dev-only-not-for-production-use!!
 set ACCESS_TOKEN_EXPIRE_MINUTES=60
 set REFRESH_TOKEN_EXPIRE_DAYS=30
 echo.

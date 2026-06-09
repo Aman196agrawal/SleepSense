@@ -7,6 +7,25 @@ from typing import List
 from app.models import SleepSession, LifestyleLog
 
 
+def _format_hour_range(hour: int) -> str:
+    """Format a 24-hour clock hour as a human-readable AM/PM range.
+
+    Examples: 0 -> "12–1 AM", 12 -> "12–1 PM", 23 -> "11 PM–12 AM".
+    """
+    hour = hour % 24
+    next_hour = (hour + 1) % 24
+
+    def _h12(h: int) -> int:
+        return 12 if h % 12 == 0 else h % 12
+
+    def _suffix(h: int) -> str:
+        return "AM" if h < 12 else "PM"
+
+    if _suffix(hour) == _suffix(next_hour):
+        return f"{_h12(hour)}–{_h12(next_hour)} {_suffix(hour)}"
+    return f"{_h12(hour)} {_suffix(hour)}–{_h12(next_hour)} {_suffix(next_hour)}"
+
+
 def generate_pattern_insights(
     user_id: str,
     sessions: List[SleepSession],
@@ -69,8 +88,7 @@ def generate_pattern_insights(
     if len(peak_hours) >= 3:
         top_hour, count = Counter(peak_hours).most_common(1)[0]
         if count >= 3:
-            h = top_hour
-            hour_str = f"{h}–{h+1} AM" if h < 12 else f"{h-12}–{h-11} PM"
+            hour_str = _format_hour_range(top_hour)
             insights.append({
                 "type": "tip",
                 "title": f"Snoring consistently peaks at {hour_str}",

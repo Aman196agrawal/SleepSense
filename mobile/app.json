@@ -7,24 +7,44 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "backgroundColor": "#0A1628"
+      "backgroundColor": "#0B0B1F"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0A1628"
+        "backgroundColor": "#0B0B1F"
       },
       "permissions": [
         "RECORD_AUDIO",
         "FOREGROUND_SERVICE",
-        "RECORD_AUDIO",
-        "FOREGROUND_SERVICE"
+        "FOREGROUND_SERVICE_MICROPHONE",
+        "WAKE_LOCK"
       ],
       "package": "com.anonymous.sleepsense"
     },
     "ios": {
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "SleepSense needs microphone access to record your sleep audio."
+        "NSMicrophoneUsageDescription": "SleepSense needs microphone access to record your sleep audio.",
+        "UIBackgroundModes": ["audio"]
       }
-    }
+    },
+    "plugins": [
+      "./plugins/withAndroidForegroundAudio",
+      "react-native-fast-tflite",
+      "expo-web-browser",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow SleepSense to access your microphone to record sleep audio."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#A78BFA",
+          "sounds": []
+        }
+      ]
+    ]
   }
 }
