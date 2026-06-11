@@ -179,8 +179,13 @@ export default function RecordScreen({ navigation }: Props) {
         console.warn('[RecordScreen] recorder.uri unavailable — binary chunk upload skipped');
       }
       if (audioUri) {
+        // Binary audio upload is optional — it feeds the server-side ML pipeline
+        // (ingestion-service). When that service isn't running (e.g. the
+        // lightweight local setup) the request fails with a network error; the
+        // session still saves via analytics, so log at warn level rather than
+        // error to avoid the alarming dev error overlay.
         IngestionAPI.uploadBinaryChunk(sid, audioUri, idx, CHUNK_SECONDS)
-          .catch(err => console.error('binary upload failed', err));
+          .catch(err => console.warn('binary upload skipped (ingestion-service unavailable)', err?.message ?? err));
       }
     } catch (err) {
       console.error('recorder cycle failed', err);

@@ -32,10 +32,23 @@ export default function LoginScreen({ navigation }: Props) {
   // Fallback to 'not-configured' so the hook doesn't throw an invariant when
   // Google OAuth env vars aren't set in dev. The button guard in handleGoogleSignIn
   // shows an alert before promptAsync() is ever called in that case.
+  // Google Android OAuth clients only accept the reversed-client-ID custom URI
+  // scheme (com.googleusercontent.apps.<id>:/oauthredirect) — and that scheme
+  // must be enabled under "Custom URI scheme" in the client's Advanced Settings.
+  // expo-auth-session 7 otherwise defaults to the package-name scheme, which
+  // Google rejects with redirect_uri_mismatch. We override it explicitly here.
+  const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? 'not-configured';
+  const reversedClientId = androidClientId.endsWith('.apps.googleusercontent.com')
+    ? `com.googleusercontent.apps.${androidClientId.replace('.apps.googleusercontent.com', '')}`
+    : undefined;
+
   const [, response, promptAsync] = Google.useAuthRequest({
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? 'not-configured',
+    androidClientId,
     iosClientId:     process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     ?? 'not-configured',
     webClientId:     process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    ...(Platform.OS === 'android' && reversedClientId
+      ? { redirectUri: `${reversedClientId}:/oauthredirect` }
+      : {}),
   });
 
   useEffect(() => {

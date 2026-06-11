@@ -3,6 +3,10 @@
     "name": "SleepSense",
     "slug": "sleepsense",
     "version": "1.0.0",
+    "scheme": [
+      "sleepsense",
+      "com.googleusercontent.apps.1035358190251-l2apra3gh2j62h8d6opogtiubekgnv90"
+    ],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",

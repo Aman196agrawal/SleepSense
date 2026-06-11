@@ -68,3 +68,4 @@ mlruns/
 
 # Screenshots (large binary, optional — remove line to include)
 # mobile/screenshots/
+/tools/
