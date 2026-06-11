@@ -46,8 +46,10 @@ def db():
 # ── INSIGHT_TEMPLATES ─────────────────────────────────────────────────────────
 
 class TestInsightTemplates:
-    def test_has_8_templates(self):
-        assert len(INSIGHT_TEMPLATES) == 8
+    def test_has_a_full_template_catalog(self):
+        # Catalog has grown well past the original 8 seed templates; assert a
+        # sane floor so an empty/broken catalog is still caught.
+        assert len(INSIGHT_TEMPLATES) >= 8
 
     def test_each_template_is_a_3_tuple(self):
         for tmpl in INSIGHT_TEMPLATES:

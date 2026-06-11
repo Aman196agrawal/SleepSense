@@ -38,7 +38,13 @@ def _send_email(to: str, subject: str, html: str) -> None:
     """Send a transactional email via SendGrid, falling back to logging when
     SENDGRID_API_KEY is not configured (dev / test environments)."""
     if not settings.SENDGRID_API_KEY:
-        _logger.info("[EMAIL SKIPPED — no SENDGRID_API_KEY] To: %s | Subject: %s", to, subject)
+        # Dev / test: no email provider configured. Log the full message — including
+        # the HTML body — so the reset/verification link is recoverable locally
+        # (otherwise password reset is a dead-end without a mail server).
+        _logger.info(
+            "[EMAIL SKIPPED — no SENDGRID_API_KEY] To: %s | Subject: %s | Body: %s",
+            to, subject, html,
+        )
         return
     import json as _json_email
     payload = _json_email.dumps({

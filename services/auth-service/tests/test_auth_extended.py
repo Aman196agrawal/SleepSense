@@ -6,6 +6,7 @@ Tests for:
   POST /auth/login (rate limit) — 429 after 10 requests in 15 min
 """
 import logging
+import re
 from unittest.mock import patch
 from fastapi import HTTPException
 
@@ -142,11 +143,17 @@ class TestForgotPassword:
 # ── /auth/reset-password ───────────────────────────────────────────────────────
 
 def _get_reset_token(client, email, caplog) -> str:
-    """Trigger forgot-password and extract the token from the log."""
+    """Trigger forgot-password and extract the token from the dev email log.
+
+    In dev/test the reset email is logged (HTML body included) instead of sent,
+    so the reset URL `.../reset-password?token=<token>` appears in the log. The
+    token is URL-safe base64 (A-Za-z0-9_-); pull it out with a regex rather than
+    a brittle string split, since the body embeds the URL more than once.
+    """
     with caplog.at_level(logging.INFO, logger="app.routes.auth"):
         client.post("/auth/forgot-password", json={"email": email})
     log_msg = next(r.message for r in caplog.records if "reset-password" in r.message)
-    return log_msg.split("token=")[1].strip()
+    return re.search(r"reset-password\?token=([A-Za-z0-9_\-]+)", log_msg).group(1)
 
 
 class TestResetPassword:
