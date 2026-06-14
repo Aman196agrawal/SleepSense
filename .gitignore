@@ -47,6 +47,9 @@ Thumbs.db
 # Claude Code local settings (contains dev secrets and local paths)
 .claude/settings.local.json
 
+# EAS local credentials (keystore passwords — never commit)
+mobile/credentials.json
+
 # Docker volumes / logs
 *.log
 logs/

@@ -2,10 +2,11 @@
  * On-device snore classifier using TensorFlow Lite (FR-ML-005).
  *
  * Model spec:
- *   Architecture : EfficientNet-B0 fine-tuned on AudioSet
- *   Input        : [1, 128, 128, 1] float32 — normalised mel spectrogram (3 s window)
- *   Output       : [1, 4] float32 — logits for [snoring, breathing, silence, ambient]
- *   Quantisation : INT8, target size <5 MB
+ *   Architecture : MobileNetV2 fine-tuned on ESC-50 mel spectrograms
+ *   Input        : [1, 128, 128, 3] float32 — 3-channel mel spectrogram (3 s window)
+ *                  (single-channel spec replicated to 3 channels to satisfy MobileNetV2)
+ *   Output       : [1, 4] float32 — softmax probs for [snoring, breathing, silence, ambient]
+ *   Quantisation : INT8, 2.91 MB
  *   Asset path   : mobile/assets/models/snore_classifier.tflite
  *
  * In Expo Go the native module is not linked — the classifier auto-degrades to
@@ -76,7 +77,9 @@ export class OnDeviceClassifier {
       return _heuristicFromFeatures(features);
     }
     try {
-      const outputs: Float32Array[] = this._model.runSync([features]);
+      // MobileNetV2 expects [1, 128, 128, 3] — replicate single-channel spectrogram 3×
+      const input3ch = _replicateChannels(features);
+      const outputs: Float32Array[] = this._model.runSync([input3ch]);
       const logits  = outputs[0];
       const probs   = _softmax(logits);
       const topIdx  = _argmax(probs);
@@ -97,6 +100,21 @@ export class OnDeviceClassifier {
 export const onDeviceClassifier = new OnDeviceClassifier();
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Expand a [H×W] single-channel spectrogram to [H×W×3] by replicating the
+ * channel 3 times in NHWC interleaved order, matching MobileNetV2's input.
+ */
+function _replicateChannels(spec1ch: Float32Array): Float32Array {
+  const out = new Float32Array(spec1ch.length * 3);
+  for (let i = 0; i < spec1ch.length; i++) {
+    const v = spec1ch[i];
+    out[i * 3]     = v;
+    out[i * 3 + 1] = v;
+    out[i * 3 + 2] = v;
+  }
+  return out;
+}
 
 function _softmax(arr: Float32Array): number[] {
   const max  = Math.max(...arr);

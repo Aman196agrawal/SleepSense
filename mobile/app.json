@@ -23,14 +23,18 @@
         "FOREGROUND_SERVICE_MICROPHONE",
         "WAKE_LOCK",
         "POST_NOTIFICATIONS",
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "package": "com.anonymous.sleepsense"
     },
     "ios": {
       "infoPlist": {
         "NSMicrophoneUsageDescription": "SleepSense needs microphone access to record your sleep audio.",
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "plugins": [
@@ -53,9 +57,13 @@
       ]
     ],
     "extra": {
-      "authUrl": "https://sister-fabulous-betting-police.trycloudflare.com",
-      "analyticsUrl": "https://observation-gate-collins-healthy.trycloudflare.com",
-      "ingestionUrl": "https://observation-gate-collins-healthy.trycloudflare.com"
-    }
+      "authUrl": "https://momentum-needle-initiated-farm.trycloudflare.com",
+      "analyticsUrl": "https://statistics-warnings-velocity-narrow.trycloudflare.com",
+      "ingestionUrl": "https://opens-land-relatives-olympus.trycloudflare.com",
+      "eas": {
+        "projectId": "2e66d995-e13b-4d68-be36-dcf501631d9d"
+      }
+    },
+    "owner": "aman196agrawal"
   }
 }
