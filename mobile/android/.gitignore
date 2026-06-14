@@ -14,3 +14,7 @@ local.properties
 
 # Bundle artifacts
 *.jsbundle
+
+# JVM crash/replay dumps from local build attempts
+hs_err_pid*.log
+replay_pid*.log
