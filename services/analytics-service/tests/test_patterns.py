@@ -52,7 +52,7 @@ def _log(
     days_ago: int = 0,
     alcohol_units: float = 0.0,
     exercise_minutes: int = 0,
-    stress_level: int = 3,
+    stress_level: int = 5,
 ) -> LifestyleLog:
     return LifestyleLog(
         id=str(uuid.uuid4()),
@@ -553,7 +553,7 @@ class TestExerciseCorrelation:
 
 class TestStressCorrelation:
     def _build(self, hi_score=55.0, lo_score=85.0):
-        # stress >= 4 → high; stress <= 2 → low
+        # stress >= 7 → high; stress <= 3 → low
         sessions = _newest_first(
             _session(score=hi_score, days_ago=0),
             _session(score=hi_score, days_ago=1),
@@ -563,12 +563,12 @@ class TestStressCorrelation:
             _session(score=lo_score, days_ago=5),
         )
         logs = [
-            _log(days_ago=0, stress_level=5),
-            _log(days_ago=1, stress_level=4),
-            _log(days_ago=2, stress_level=4),
-            _log(days_ago=3, stress_level=1),
-            _log(days_ago=4, stress_level=2),
-            _log(days_ago=5, stress_level=2),
+            _log(days_ago=0, stress_level=9),
+            _log(days_ago=1, stress_level=7),
+            _log(days_ago=2, stress_level=8),
+            _log(days_ago=3, stress_level=2),
+            _log(days_ago=4, stress_level=3),
+            _log(days_ago=5, stress_level=1),
         ]
         return sessions, logs
 
@@ -588,21 +588,21 @@ class TestStressCorrelation:
         result = generate_pattern_insights("u1", sessions, logs)
         assert [i for i in result if "stress" in i["title"].lower()] == []
 
-    def test_stress_level_3_is_neither_high_nor_low(self):
-        # Level 3 is neither >= 4 (high) nor <= 2 (low) — no groups form
+    def test_stress_level_5_is_neither_high_nor_low(self):
+        # Level 5 is neither >= 7 (high) nor <= 3 (low) — no groups form
         sessions = _newest_first(*[_session(score=70, days_ago=i) for i in range(6)])
-        logs = [_log(days_ago=i, stress_level=3) for i in range(6)]
+        logs = [_log(days_ago=i, stress_level=5) for i in range(6)]
         result = generate_pattern_insights("u1", sessions, logs)
         assert [i for i in result if "stress" in i["title"].lower()] == []
 
     def test_fewer_than_3_high_stress_days_no_tip(self):
         sessions = _newest_first(*[_session(score=60, days_ago=i) for i in range(6)])
         logs = [
-            _log(days_ago=0, stress_level=5),
-            _log(days_ago=1, stress_level=4),  # only 2 high-stress
-            _log(days_ago=2, stress_level=2),
-            _log(days_ago=3, stress_level=1),
-            _log(days_ago=4, stress_level=2),
+            _log(days_ago=0, stress_level=9),
+            _log(days_ago=1, stress_level=7),  # only 2 high-stress
+            _log(days_ago=2, stress_level=3),
+            _log(days_ago=3, stress_level=2),
+            _log(days_ago=4, stress_level=3),
             _log(days_ago=5, stress_level=1),
         ]
         result = generate_pattern_insights("u1", sessions, logs)

@@ -14,9 +14,9 @@ router = APIRouter()
 class LifestyleLogCreate(BaseModel):
     logged_date: str                                       # YYYY-MM-DD
     caffeine_cups: int     = Field(default=0, ge=0, le=10)
-    alcohol_units: float   = Field(default=0.0, ge=0, le=20)
+    alcohol_units: float   = Field(default=0.0, ge=0, le=500)
     exercise_minutes: int  = Field(default=0, ge=0, le=300)
-    stress_level: int      = Field(default=3, ge=1, le=5)
+    stress_level: int      = Field(default=5, ge=1, le=10)
     sleep_aid_used: bool   = False
     notes: Optional[str]   = None
 

@@ -13,9 +13,9 @@ OLD_DATE = "2000-01-01"
 LOG_BASE = {
     "logged_date": TODAY,
     "caffeine_cups": 2,
-    "alcohol_units": 1.0,
+    "alcohol_units": 150.0,
     "exercise_minutes": 30,
-    "stress_level": 3,
+    "stress_level": 5,
     "sleep_aid_used": False,
 }
 
@@ -41,9 +41,9 @@ class TestLogLifestyle:
         body = client.post("/lifestyle", json=LOG_BASE, headers=headers_a).json()
         assert body["logged_date"] == TODAY
         assert body["caffeine_cups"] == 2
-        assert body["alcohol_units"] == 1.0
+        assert body["alcohol_units"] == 150.0
         assert body["exercise_minutes"] == 30
-        assert body["stress_level"] == 3
+        assert body["stress_level"] == 5
         assert body["sleep_aid_used"] is False
 
     def test_log_notes_saved_and_returned(self, client, headers_a):
@@ -60,7 +60,7 @@ class TestLogLifestyle:
         assert body["caffeine_cups"] == 0
         assert body["alcohol_units"] == 0.0
         assert body["exercise_minutes"] == 0
-        assert body["stress_level"] == 3
+        assert body["stress_level"] == 5
         assert body["sleep_aid_used"] is False
 
     def test_log_upserts_same_date(self, client, headers_a):
@@ -87,7 +87,7 @@ class TestLogLifestyle:
         assert resp.status_code == 422
 
     def test_log_stress_above_max_returns_422(self, client, headers_a):
-        resp = client.post("/lifestyle", json={**LOG_BASE, "stress_level": 6}, headers=headers_a)
+        resp = client.post("/lifestyle", json={**LOG_BASE, "stress_level": 11}, headers=headers_a)
         assert resp.status_code == 422
 
     def test_log_exercise_above_max_returns_422(self, client, headers_a):
@@ -95,7 +95,7 @@ class TestLogLifestyle:
         assert resp.status_code == 422
 
     def test_log_alcohol_above_max_returns_422(self, client, headers_a):
-        resp = client.post("/lifestyle", json={**LOG_BASE, "alcohol_units": 21.0}, headers=headers_a)
+        resp = client.post("/lifestyle", json={**LOG_BASE, "alcohol_units": 501.0}, headers=headers_a)
         assert resp.status_code == 422
 
 

@@ -158,9 +158,9 @@ CREATE TABLE lifestyle_logs (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id             UUID REFERENCES users(id) ON DELETE CASCADE,
     logged_date         DATE NOT NULL,
-    alcohol_units       DECIMAL(3,1),
+    alcohol_units       DECIMAL(5,1),                         -- ml of alcohol consumed
     exercise_minutes    INTEGER,
-    stress_level        INTEGER CHECK (stress_level BETWEEN 1 AND 5),
+    stress_level        INTEGER CHECK (stress_level BETWEEN 1 AND 10),
     caffeine_cups       INTEGER,
     sleep_aid_used      BOOLEAN DEFAULT FALSE,
     notes               TEXT,

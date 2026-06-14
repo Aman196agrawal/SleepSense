@@ -17,8 +17,8 @@ const yesterday = () => {
   return d.toISOString().slice(0, 10);
 };
 
-const STRESS_LABELS = ['', 'Very Low', 'Low', 'Moderate', 'High', 'Very High'];
-const STRESS_COLORS = ['', Colors.excellent, Colors.good, Colors.amber, Colors.poor, Colors.danger];
+const STRESS_LABELS = ['', 'Very Low', 'Very Low', 'Low', 'Low', 'Moderate', 'Moderate', 'High', 'High', 'Very High', 'Very High'];
+const STRESS_COLORS = ['', Colors.excellent, Colors.excellent, Colors.good, Colors.good, Colors.amber, Colors.amber, Colors.poor, Colors.poor, Colors.danger, Colors.danger];
 
 // ── stepper ───────────────────────────────────────────────────────────────────
 
@@ -65,18 +65,22 @@ const step_s = StyleSheet.create({
 
 function StressSelector({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
-    <View style={{ flexDirection: 'row', gap: 8 }}>
-      {[1, 2, 3, 4, 5].map(n => (
-        <TouchableOpacity
-          key={n}
-          onPress={() => onChange(n)}
-          style={[
-            ss_s.dot,
-            { borderColor: STRESS_COLORS[n], backgroundColor: value === n ? STRESS_COLORS[n] + '33' : 'transparent' },
-          ]}
-        >
-          <Text style={[ss_s.label, { color: value === n ? STRESS_COLORS[n] : Colors.textMuted }]}>{n}</Text>
-        </TouchableOpacity>
+    <View style={{ gap: 6 }}>
+      {[[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]].map((row, ri) => (
+        <View key={ri} style={{ flexDirection: 'row', gap: 6 }}>
+          {row.map(n => (
+            <TouchableOpacity
+              key={n}
+              onPress={() => onChange(n)}
+              style={[
+                ss_s.dot,
+                { borderColor: STRESS_COLORS[n], backgroundColor: value === n ? STRESS_COLORS[n] + '33' : 'transparent' },
+              ]}
+            >
+              <Text style={[ss_s.label, { color: value === n ? STRESS_COLORS[n] : Colors.textMuted }]}>{n}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       ))}
     </View>
   );
@@ -92,7 +96,7 @@ const ss_s = StyleSheet.create({
 function LogRow({ log }: { log: any }) {
   const icons: [string, string, any][] = [
     ['cafe-outline',     `${log.caffeine_cups} coffee`,    Colors.amber],
-    ['wine-outline',     `${log.alcohol_units} alcohol`,   Colors.danger],
+    ['wine-outline',     `${log.alcohol_units}ml alcohol`,  Colors.danger],
     ['barbell-outline',  `${log.exercise_minutes}m exercise`, Colors.secondary],
   ];
   return (
@@ -132,7 +136,7 @@ export default function LifestyleLogScreen() {
   const [caffeine,   setCaffeine]   = useState(0);
   const [alcohol,    setAlcohol]    = useState(0);
   const [exercise,   setExercise]   = useState(0);
-  const [stress,     setStress]     = useState(3);
+  const [stress,     setStress]     = useState(5);
   const [sleepAid,   setSleepAid]   = useState(false);
   const [saving,     setSaving]     = useState(false);
   const [recentLogs, setRecentLogs] = useState<any[]>([]);
@@ -163,7 +167,7 @@ export default function LifestyleLogScreen() {
       setStress(existing.stress_level);
       setSleepAid(existing.sleep_aid_used);
     } else {
-      setCaffeine(0); setAlcohol(0); setExercise(0); setStress(3); setSleepAid(false);
+      setCaffeine(0); setAlcohol(0); setExercise(0); setStress(5); setSleepAid(false);
     }
   }, [logDate, recentLogs]);
 
@@ -220,7 +224,7 @@ export default function LifestyleLogScreen() {
           </Row>
 
           <Row icon="wine-outline" iconColor={Colors.danger} label="Alcohol">
-            <Stepper value={alcohol} min={0} max={20} step={1} onChange={v => setAlcohol(v)} unit="units" />
+            <Stepper value={alcohol} min={0} max={500} step={25} onChange={v => setAlcohol(v)} unit="ml" />
           </Row>
 
           <Row icon="barbell-outline" iconColor={Colors.secondary} label="Exercise">

@@ -215,8 +215,8 @@ def generate_pattern_insights(
                 })
 
         # High stress impact
-        hi_stress = [log_by_date[d] for d in log_by_date if log_by_date[d].stress_level >= 4]
-        lo_stress = [log_by_date[d] for d in log_by_date if log_by_date[d].stress_level <= 2]
+        hi_stress = [log_by_date[d] for d in log_by_date if log_by_date[d].stress_level >= 7]
+        lo_stress = [log_by_date[d] for d in log_by_date if log_by_date[d].stress_level <= 3]
 
         def _scores_for_logs(logs_list):
             result = []
