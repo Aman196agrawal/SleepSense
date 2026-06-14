@@ -51,6 +51,11 @@
           "sounds": []
         }
       ]
-    ]
+    ],
+    "extra": {
+      "authUrl": "https://sister-fabulous-betting-police.trycloudflare.com",
+      "analyticsUrl": "https://observation-gate-collins-healthy.trycloudflare.com",
+      "ingestionUrl": "https://observation-gate-collins-healthy.trycloudflare.com"
+    }
   }
 }

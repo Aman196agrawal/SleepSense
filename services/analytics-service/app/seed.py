@@ -2,11 +2,14 @@
 Generates 30 days of realistic mock sleep data for a new user.
 Called once per user on first analytics request.
 """
+import hashlib
 import logging
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import SleepSession, SessionInsight, SeededUser
@@ -26,10 +29,37 @@ _make_timeline = make_timeline
 _logger = logging.getLogger(__name__)
 
 
+def _advisory_key(user_id: str) -> int:
+    """Stable signed 64-bit key for pg_advisory_xact_lock (takes a bigint)."""
+    return int.from_bytes(hashlib.sha256(user_id.encode()).digest()[:8], "big", signed=True)
+
+
 def seed_user(user_id: str, db: Session) -> None:
     if db.query(SeededUser).filter(SeededUser.user_id == user_id).first():
         return  # already seeded
 
+    # The dashboard fires several analytics endpoints at once (trends,
+    # weekly-summary, insights, calendar), each calling seed_user(). Without
+    # serialization they all pass the check above before anyone commits the
+    # SeededUser marker, then seed concurrently and collide on commit
+    # (IntegrityError -> HTTP 500). On Postgres, take a per-user transaction
+    # advisory lock so only one request seeds; the rest block, then see the
+    # marker and return. The lock auto-releases when this transaction ends.
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _advisory_key(user_id)})
+        if db.query(SeededUser).filter(SeededUser.user_id == user_id).first():
+            return  # another request seeded while we waited for the lock
+
+    try:
+        _generate_seed_data(user_id, db)
+    except IntegrityError:
+        # A concurrent request already seeded this user (e.g. on SQLite, which
+        # has no advisory lock). Discard our partial work; their data stands.
+        db.rollback()
+        _logger.info("Seed race for user %s resolved (kept concurrent seed)", user_id)
+
+
+def _generate_seed_data(user_id: str, db: Session) -> None:
     rng = random.Random(user_id)  # deterministic per user
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -75,6 +105,13 @@ def seed_user(user_id: str, db: Session) -> None:
 
         for bucket in make_timeline(session.id, duration, snore_ratio, rng):
             db.add(bucket)
+
+        # Flush the session (and its timeline) so the row physically exists
+        # before the insight below references it via FK. These models declare
+        # the FK column but no relationship(), so SQLAlchemy's unit-of-work
+        # can't infer the insert order on its own and would otherwise emit the
+        # session_insights INSERT before sleep_sessions -> ForeignKeyViolation.
+        db.flush()
 
         tmpl = rng.choice(INSIGHT_TEMPLATES)
         db.add(SessionInsight(
