@@ -550,25 +550,39 @@ class TestExerciseCorrelation:
 
 
 # ── Rule 7: Stress correlation ────────────────────────────────────────────────
+#
+# Thresholds are now dynamic (tertile-based):
+#   all_stress sorted → lo_thresh = sorted[n//3 - 1], hi_thresh = sorted[(2n)//3]
+#   high group: stress >= hi_thresh;  low group: stress <= lo_thresh
+# At least 6 logs needed and lo_thresh < hi_thresh to fire any insight.
 
 class TestStressCorrelation:
     def _build(self, hi_score=55.0, lo_score=85.0):
-        # stress >= 7 → high; stress <= 3 → low
+        # 9 logs: 3 high (9,8,9), 3 neutral (5,5,5), 3 low (1,2,1)
+        # sorted=[1,1,2,5,5,5,8,9,9] n=9
+        # lo_thresh=sorted[2]=2, hi_thresh=sorted[6]=8
+        # lo group: stress<=2 → [1,1,2] (3 logs); hi group: stress>=8 → [8,9,9] (3 logs)
         sessions = _newest_first(
-            _session(score=hi_score, days_ago=0),
-            _session(score=hi_score, days_ago=1),
-            _session(score=hi_score, days_ago=2),
-            _session(score=lo_score, days_ago=3),
-            _session(score=lo_score, days_ago=4),
-            _session(score=lo_score, days_ago=5),
+            _session(score=hi_score, days_ago=0),   # stress 9
+            _session(score=hi_score, days_ago=1),   # stress 8
+            _session(score=hi_score, days_ago=2),   # stress 9
+            _session(score=70,       days_ago=3),   # stress 5 (neutral)
+            _session(score=70,       days_ago=4),   # stress 5
+            _session(score=70,       days_ago=5),   # stress 5
+            _session(score=lo_score, days_ago=6),   # stress 1
+            _session(score=lo_score, days_ago=7),   # stress 2
+            _session(score=lo_score, days_ago=8),   # stress 1
         )
         logs = [
             _log(days_ago=0, stress_level=9),
-            _log(days_ago=1, stress_level=7),
-            _log(days_ago=2, stress_level=8),
-            _log(days_ago=3, stress_level=2),
-            _log(days_ago=4, stress_level=3),
-            _log(days_ago=5, stress_level=1),
+            _log(days_ago=1, stress_level=8),
+            _log(days_ago=2, stress_level=9),
+            _log(days_ago=3, stress_level=5),
+            _log(days_ago=4, stress_level=5),
+            _log(days_ago=5, stress_level=5),
+            _log(days_ago=6, stress_level=1),
+            _log(days_ago=7, stress_level=2),
+            _log(days_ago=8, stress_level=1),
         ]
         return sessions, logs
 
@@ -584,25 +598,42 @@ class TestStressCorrelation:
         assert tips[0]["type"] == "tip"
 
     def test_no_tip_when_difference_less_than_5(self):
+        # hi_score and lo_score close together → diff < 5 → no tip
         sessions, logs = self._build(hi_score=70.0, lo_score=73.0)
         result = generate_pattern_insights("u1", sessions, logs)
         assert [i for i in result if "stress" in i["title"].lower()] == []
 
-    def test_stress_level_5_is_neither_high_nor_low(self):
-        # Level 5 is neither >= 7 (high) nor <= 3 (low) — no groups form
+    def test_uniform_stress_no_contrast_no_tip(self):
+        # All logs at stress=5 → lo_thresh == hi_thresh → skipped
         sessions = _newest_first(*[_session(score=70, days_ago=i) for i in range(6)])
         logs = [_log(days_ago=i, stress_level=5) for i in range(6)]
         result = generate_pattern_insights("u1", sessions, logs)
         assert [i for i in result if "stress" in i["title"].lower()] == []
 
-    def test_fewer_than_3_high_stress_days_no_tip(self):
-        sessions = _newest_first(*[_session(score=60, days_ago=i) for i in range(6)])
+    def test_fewer_than_6_stress_logs_no_tip(self):
+        # Need at least 6 logs to compute meaningful tertiles
+        sessions = _newest_first(*[_session(score=60, days_ago=i) for i in range(5)])
         logs = [
             _log(days_ago=0, stress_level=9),
-            _log(days_ago=1, stress_level=7),  # only 2 high-stress
-            _log(days_ago=2, stress_level=3),
+            _log(days_ago=1, stress_level=8),
+            _log(days_ago=2, stress_level=1),
             _log(days_ago=3, stress_level=2),
-            _log(days_ago=4, stress_level=3),
+            _log(days_ago=4, stress_level=1),
+        ]
+        result = generate_pattern_insights("u1", sessions, logs)
+        assert [i for i in result if "stress" in i["title"].lower()] == []
+
+    def test_fewer_than_3_sessions_per_group_no_tip(self):
+        # 6 logs but groups have only 2 each after tertile split
+        sessions = _newest_first(*[_session(score=60, days_ago=i) for i in range(6)])
+        # sorted=[1,2,3,3,8,9] n=6 lo_thresh=sorted[1]=2 hi_thresh=sorted[4]=8
+        # lo group: stress<=2 → [1,2] (2); hi group: stress>=8 → [8,9] (2) → no tip
+        logs = [
+            _log(days_ago=0, stress_level=9),
+            _log(days_ago=1, stress_level=8),
+            _log(days_ago=2, stress_level=3),
+            _log(days_ago=3, stress_level=3),
+            _log(days_ago=4, stress_level=2),
             _log(days_ago=5, stress_level=1),
         ]
         result = generate_pattern_insights("u1", sessions, logs)

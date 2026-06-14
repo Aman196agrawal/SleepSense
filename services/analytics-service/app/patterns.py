@@ -214,31 +214,47 @@ def generate_pattern_insights(
                     "priority": 7,
                 })
 
-        # High stress impact
-        hi_stress = [log_by_date[d] for d in log_by_date if log_by_date[d].stress_level >= 7]
-        lo_stress = [log_by_date[d] for d in log_by_date if log_by_date[d].stress_level <= 3]
+        # High/low stress — thresholds are derived from the user's own distribution
+        # (tertile boundaries) so comparisons reflect their personal baseline, not
+        # a fixed absolute scale.
+        all_stress = sorted(
+            log.stress_level for log in lifestyle_logs
+            if log.stress_level is not None
+        )
+        n_stress = len(all_stress)
+        if n_stress >= 6:
+            lo_thresh = all_stress[n_stress // 3 - 1]      # top of bottom tertile
+            hi_thresh = all_stress[(2 * n_stress) // 3]    # start of top tertile
 
-        def _scores_for_logs(logs_list):
-            result = []
-            for log in logs_list:
-                s = by_date.get(log.logged_date)
-                if s and s.sleep_quality_score is not None:
-                    result.append(s.sleep_quality_score)
-            return result
+            if lo_thresh < hi_thresh:                       # need contrast to be meaningful
+                hi_stress = [log_by_date[d] for d in log_by_date
+                             if log_by_date[d].stress_level is not None
+                             and log_by_date[d].stress_level >= hi_thresh]
+                lo_stress = [log_by_date[d] for d in log_by_date
+                             if log_by_date[d].stress_level is not None
+                             and log_by_date[d].stress_level <= lo_thresh]
 
-        hi_s = _scores_for_logs(hi_stress)
-        lo_s = _scores_for_logs(lo_stress)
-        if len(hi_s) >= 3 and len(lo_s) >= 3:
-            diff = sum(lo_s) / len(lo_s) - sum(hi_s) / len(hi_s)
-            if diff >= 5:
-                insights.append({
-                    "type": "tip",
-                    "title": f"High-stress days hurt sleep by {diff:.0f} points",
-                    "body": (f"Your sleep score drops significantly on high-stress days. "
-                             f"Try a 10-minute wind-down routine: deep breathing, "
-                             f"no screens, and journaling before bed."),
-                    "priority": 6,
-                })
+                def _scores_for_logs(logs_list):
+                    result = []
+                    for log in logs_list:
+                        s = by_date.get(log.logged_date)
+                        if s and s.sleep_quality_score is not None:
+                            result.append(s.sleep_quality_score)
+                    return result
+
+                hi_s = _scores_for_logs(hi_stress)
+                lo_s = _scores_for_logs(lo_stress)
+                if len(hi_s) >= 3 and len(lo_s) >= 3:
+                    diff = sum(lo_s) / len(lo_s) - sum(hi_s) / len(hi_s)
+                    if diff >= 5:
+                        insights.append({
+                            "type": "tip",
+                            "title": f"High-stress days hurt sleep by {diff:.0f} points",
+                            "body": (f"Your sleep score drops significantly on your most stressful days. "
+                                     f"Try a 10-minute wind-down routine: deep breathing, "
+                                     f"no screens, and journaling before bed."),
+                            "priority": 6,
+                        })
 
     insights.sort(key=lambda x: x.get("priority", 0), reverse=True)
     return insights

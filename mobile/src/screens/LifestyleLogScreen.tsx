@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Switch, ActivityIndicator, Alert,
+  Switch, ActivityIndicator, Alert, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,9 +16,6 @@ const yesterday = () => {
   d.setDate(d.getDate() - 1);
   return d.toISOString().slice(0, 10);
 };
-
-const STRESS_LABELS = ['', 'Very Low', 'Very Low', 'Low', 'Low', 'Moderate', 'Moderate', 'High', 'High', 'Very High', 'Very High'];
-const STRESS_COLORS = ['', Colors.excellent, Colors.excellent, Colors.good, Colors.good, Colors.amber, Colors.amber, Colors.poor, Colors.poor, Colors.danger, Colors.danger];
 
 // ── stepper ───────────────────────────────────────────────────────────────────
 
@@ -61,34 +58,46 @@ const step_s = StyleSheet.create({
   unit:     { color: Colors.textMuted, fontSize: 11, marginTop: 1 },
 });
 
-// ── stress selector ───────────────────────────────────────────────────────────
+// ── stress input ──────────────────────────────────────────────────────────────
 
-function StressSelector({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function StressInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [text, setText] = React.useState(String(value));
+
+  // Keep text in sync when parent resets/pre-fills (e.g. date switch)
+  React.useEffect(() => { setText(String(value)); }, [value]);
+
   return (
-    <View style={{ gap: 6 }}>
-      {[[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]].map((row, ri) => (
-        <View key={ri} style={{ flexDirection: 'row', gap: 6 }}>
-          {row.map(n => (
-            <TouchableOpacity
-              key={n}
-              onPress={() => onChange(n)}
-              style={[
-                ss_s.dot,
-                { borderColor: STRESS_COLORS[n], backgroundColor: value === n ? STRESS_COLORS[n] + '33' : 'transparent' },
-              ]}
-            >
-              <Text style={[ss_s.label, { color: value === n ? STRESS_COLORS[n] : Colors.textMuted }]}>{n}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ))}
+    <View style={si_s.row}>
+      <TextInput
+        style={si_s.input}
+        value={text}
+        onChangeText={t => {
+          const digits = t.replace(/[^0-9]/g, '');
+          setText(digits);
+          const n = parseInt(digits, 10);
+          if (!isNaN(n) && n >= 1 && n <= 10) onChange(n);
+        }}
+        onBlur={() => {
+          const n = parseInt(text, 10);
+          const clamped = isNaN(n) ? 5 : Math.max(1, Math.min(10, n));
+          setText(String(clamped));
+          onChange(clamped);
+        }}
+        keyboardType="number-pad"
+        maxLength={2}
+        placeholder="—"
+        placeholderTextColor={Colors.textMuted}
+        selectTextOnFocus
+      />
+      <Text style={si_s.scale}>/10</Text>
     </View>
   );
 }
 
-const ss_s = StyleSheet.create({
-  dot:   { flex: 1, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, alignItems: 'center' },
-  label: { fontSize: 14, fontWeight: '700' },
+const si_s = StyleSheet.create({
+  row:   { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  input: { width: 56, height: 40, borderRadius: 10, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.surfaceHigh, color: Colors.text, fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  scale: { color: Colors.textMuted, fontSize: 13, fontWeight: '600' },
 });
 
 // ── recent log row ────────────────────────────────────────────────────────────
@@ -111,9 +120,9 @@ function LogRow({ log }: { log: any }) {
             <Text style={[lr_s.chipText, { color }]}>{label}</Text>
           </View>
         ))}
-        <View style={[lr_s.chip, { backgroundColor: STRESS_COLORS[log.stress_level] + '22' }]}>
-          <Text style={[lr_s.chipText, { color: STRESS_COLORS[log.stress_level] }]}>
-            stress {log.stress_level}
+        <View style={[lr_s.chip, { backgroundColor: Colors.primary + '22' }]}>
+          <Text style={[lr_s.chipText, { color: Colors.primary }]}>
+            stress {log.stress_level}/10
           </Text>
         </View>
       </View>
@@ -232,12 +241,7 @@ export default function LifestyleLogScreen() {
           </Row>
 
           <Row icon="brain-outline" iconColor={Colors.primary} label="Stress level">
-            <View style={{ gap: 6 }}>
-              <StressSelector value={stress} onChange={setStress} />
-              <Text style={{ color: STRESS_COLORS[stress], fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
-                {STRESS_LABELS[stress]}
-              </Text>
-            </View>
+            <StressInput value={stress} onChange={setStress} />
           </Row>
 
           <View style={[styles.rowWrap, { paddingBottom: 0 }]}>
