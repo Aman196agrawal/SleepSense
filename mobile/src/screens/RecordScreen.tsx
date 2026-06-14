@@ -264,7 +264,7 @@ export default function RecordScreen({ navigation }: Props) {
       }
 
       if (Platform.OS !== 'web') {
-        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: true });
       }
 
       privacyModeRef.current = privacyMode;

@@ -5,13 +5,17 @@
  * declared with android:foregroundServiceType="microphone". Without this declaration
  * the OS will reject startForeground() at runtime and kill the recording.
  *
- * expo-audio's Android AudioRecorder binds to this service class when the manifest
- * entry is present, which keeps the recording alive while the app is in the background.
+ * expo-audio's AudioRecorder checks `useForegroundService` (set when `allowsBackgroundRecording`
+ * is passed to `setAudioModeAsync`) and calls AudioRecordingService.startService(), which calls
+ * startForeground(), protecting the entire app process (including the JS thread) from Doze.
  * This plugin runs at EAS Build / expo prebuild time — it does NOT affect Expo Go.
  */
 const { withAndroidManifest } = require('@expo/config-plugins');
 
-const FOREGROUND_SERVICE_NAME = 'expo.modules.audio.AudioRecordingForegroundService';
+// Real class name in expo-audio v1.x (expo.modules.audio.service.AudioRecordingService).
+// expo-audio's library manifest already declares this, but we add it at app level too
+// to ensure stopWithTask="false" is applied (keeps recording alive if user swipes away).
+const FOREGROUND_SERVICE_NAME = 'expo.modules.audio.service.AudioRecordingService';
 
 /**
  * @param {import('@expo/config-plugins').ExpoConfig} config
