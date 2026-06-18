@@ -212,7 +212,15 @@ export default function RecordScreen({ navigation }: Props) {
   // In Privacy Mode, the on-device TFLite classifier is used instead of the
   // loudness heuristic so snore detection runs without any cloud upload.
   const pollMeter = useCallback(() => {
-    const db  = (recorder as any).currentMetering ?? DB_FLOOR;
+    // expo-audio exposes the live audio level via getStatus().metering (dBFS).
+    // There is no `currentMetering` property on the recorder — reading it returns
+    // undefined, which would pin every reading to DB_FLOOR (silence).
+    let db = DB_FLOOR;
+    try {
+      db = recorder.getStatus().metering ?? DB_FLOOR;
+    } catch {
+      db = DB_FLOOR; // recorder mid stop/restart — treat as silence for this tick
+    }
     const lvl = dbToIntensity(db);
 
     // Keep a rolling metering history for the on-device classifier
