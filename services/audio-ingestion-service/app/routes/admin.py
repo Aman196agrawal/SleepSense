@@ -16,7 +16,9 @@ def gdpr_delete_user_audio(
     x_internal_secret: str = Header(..., alias="X-Internal-Secret"),
     db: Session = Depends(get_db),
 ):
-    if x_internal_secret != settings.INTERNAL_API_SECRET:
+    # Fail closed: an unconfigured (empty) secret must never authorise this
+    # destructive GDPR endpoint, otherwise an empty header would match.
+    if not settings.INTERNAL_API_SECRET or x_internal_secret != settings.INTERNAL_API_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
     """Delete all S3 audio and ingestion DB records for a user (GDPR erasure)."""
     deleted_s3 = delete_user_audio(user_id)

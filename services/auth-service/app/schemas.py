@@ -5,6 +5,11 @@ from datetime import datetime, date
 
 
 def _validate_password_strength(v: str) -> str:
+    # bcrypt silently truncates anything past 72 bytes, so two long passwords
+    # sharing a 72-byte prefix would collide. Reject them up front rather than
+    # hashing a truncated secret.
+    if len(v.encode('utf-8')) > 72:
+        raise ValueError('Password must be at most 72 bytes long')
     errors = []
     if len(v) < 8:
         errors.append('at least 8 characters')

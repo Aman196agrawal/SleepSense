@@ -185,7 +185,9 @@ def purge_user_data(
 ):
     from app.config import settings as _s
     from app.models import Notification, DeviceToken
-    if x_internal_secret != _s.INTERNAL_API_SECRET:
+    # Fail closed: an unconfigured (empty) secret must never authorise this
+    # destructive purge endpoint, otherwise an empty header would match.
+    if not _s.INTERNAL_API_SECRET or x_internal_secret != _s.INTERNAL_API_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
     db.query(Notification).filter(Notification.user_id == user_id).delete()
     db.query(DeviceToken).filter(DeviceToken.user_id == user_id).delete()

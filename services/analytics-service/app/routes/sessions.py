@@ -221,7 +221,7 @@ def end_session(
     session.avg_snore_intensity   = round(avg_int, 1)
     session.max_snore_intensity   = round(max_int, 1)
     session.peak_snoring_hour     = peak_hour
-    session.total_chunks          = session.total_chunks or max(1, duration // 30)
+    session.total_chunks          = session.total_chunks or max(1, duration * 2)  # 30s chunks → 2 per minute
     session.processed_chunks      = session.total_chunks
 
     # Generate one insight based on the computed score

@@ -90,17 +90,27 @@ class TestRefresh:
         assert "refresh_token" in body
 
     def test_refresh_rotates_token(self, client, registered_user):
-        """Old refresh token must be rejected after rotation."""
+        """After rotation, the freshly-issued refresh token works."""
         old_refresh = registered_user["refresh_token"]
         new_tokens = client.post("/auth/refresh", json={"refresh_token": old_refresh}).json()
 
-        # Old token is now consumed — reusing it must fail
+        # New token must still work (no reuse of the old token here)
+        resp2 = client.post("/auth/refresh", json={"refresh_token": new_tokens["refresh_token"]})
+        assert resp2.status_code == 200
+
+    def test_refresh_reuse_revokes_token_family(self, client, registered_user):
+        """Replaying an already-rotated token is treated as theft: the whole
+        family is revoked, so even the legitimately-rotated token stops working."""
+        old_refresh = registered_user["refresh_token"]
+        new_tokens = client.post("/auth/refresh", json={"refresh_token": old_refresh}).json()
+
+        # Reusing the consumed old token must fail
         resp = client.post("/auth/refresh", json={"refresh_token": old_refresh})
         assert resp.status_code == 401
 
-        # New token must still work
+        # ...and reuse detection invalidates the rest of the family too
         resp2 = client.post("/auth/refresh", json={"refresh_token": new_tokens["refresh_token"]})
-        assert resp2.status_code == 200
+        assert resp2.status_code == 401
 
     def test_refresh_with_invalid_token_returns_401(self, client):
         resp = client.post("/auth/refresh", json={"refresh_token": "totally.invalid.token"})

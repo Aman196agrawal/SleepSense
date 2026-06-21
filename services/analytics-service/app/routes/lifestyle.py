@@ -79,8 +79,9 @@ def get_logs(
         since = from_date
         until = to_date
     else:
-        since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
-        until = datetime.utcnow().strftime("%Y-%m-%d")
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        since = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+        until = now.strftime("%Y-%m-%d")
     logs = (
         db.query(LifestyleLog)
         .filter(

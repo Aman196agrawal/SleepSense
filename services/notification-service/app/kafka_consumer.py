@@ -55,9 +55,9 @@ def run_consumer(db_factory, dispatcher_fn):
 
 def _can_send_health_alert(user_id: str, db) -> bool:
     """Return True only if no health alert was sent in the last 7 days (FR-NOTIF-003)."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from app.models import Notification
-    cutoff = datetime.utcnow() - timedelta(days=7)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
     recent = db.query(Notification).filter(
         Notification.user_id == user_id,
         Notification.type == "health_alert",

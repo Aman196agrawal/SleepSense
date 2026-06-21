@@ -28,6 +28,12 @@ from app.redis_client import get_redis
 router = APIRouter()
 _logger = logging.getLogger(__name__)
 
+# Pre-computed bcrypt hash used to keep login timing constant when the email does
+# not exist (or is an OAuth-only account). Verifying against this dummy hash means
+# a missing user costs the same bcrypt work as a real one, closing the timing-based
+# user-enumeration side channel.
+_DUMMY_PASSWORD_HASH = hash_password("timing-equalizer-not-a-real-password")
+
 
 def _rt_key(token: str) -> str:
     """Return the Redis key for a refresh token — stored as SHA-256 hash (SEC-014)."""
@@ -96,12 +102,27 @@ def _store_refresh_token(token: str, user_id: str, db: Session) -> None:
 
 
 def _consume_from_db(token: str, db: Session) -> str:
-    rt = db.query(RefreshToken).filter(
-        RefreshToken.token == token,
-        RefreshToken.is_revoked == False,
-    ).first()
-    if not rt or rt.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
+    # Look the token up regardless of revoked state so we can distinguish an
+    # unknown token from a *reused* (already-rotated) one.
+    rt = db.query(RefreshToken).filter(RefreshToken.token == token).first()
+    if not rt:
         raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
+
+    if rt.is_revoked:
+        # A token that was already rotated is being presented again — the classic
+        # signal of a stolen/leaked refresh token. Revoke the entire family so the
+        # attacker and the victim both have to re-authenticate (OWASP rotation).
+        db.query(RefreshToken).filter(
+            RefreshToken.user_id == rt.user_id,
+            RefreshToken.is_revoked == False,
+        ).update({"is_revoked": True})
+        db.commit()
+        _logger.warning("Refresh token reuse detected for user %s — family revoked", rt.user_id)
+        raise HTTPException(status_code=401, detail="Refresh token reuse detected. Please log in again.")
+
+    if rt.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
+        raise HTTPException(status_code=401, detail="Refresh token expired or revoked")
+
     rt.is_revoked = True
     db.commit()
     return rt.user_id
@@ -265,7 +286,11 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     _check_rate_limit(ip)
 
     user = db.query(User).filter(User.email == body.email).first()
-    if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
+    # Always run a bcrypt verify (against a dummy hash if the user/password is
+    # absent) so the response time is independent of whether the email exists.
+    stored_hash = user.password_hash if (user and user.password_hash) else _DUMMY_PASSWORD_HASH
+    password_ok = verify_password(body.password, stored_hash)
+    if not user or not user.password_hash or not password_ok:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     access  = create_access_token(user.id, getattr(user, 'role', 'user'))
@@ -280,7 +305,10 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/refresh")
-def refresh_token(body: RefreshRequest, db: Session = Depends(get_db)):
+def refresh_token(request: Request, body: RefreshRequest, db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip, "refresh", limit=30, window=900)
+
     payload = decode_token(body.refresh_token)
     if payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid token type")

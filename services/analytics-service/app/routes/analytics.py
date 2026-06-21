@@ -203,7 +203,7 @@ def calendar_heatmap(
             "duration_minutes": s.duration_minutes,
         }
 
-    today = datetime.utcnow().date()
+    today = datetime.now(timezone.utc).replace(tzinfo=None).date()
     calendar = []
     for i in range(days - 1, -1, -1):
         d = today - timedelta(days=i)
@@ -270,7 +270,7 @@ def get_streak(
         reverse=True,
     )
 
-    today = datetime.utcnow().date()
+    today = datetime.now(timezone.utc).replace(tzinfo=None).date()
     yesterday = today - timedelta(days=1)
 
     current_streak = 0
