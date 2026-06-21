@@ -19,6 +19,18 @@ _MAX_AVATAR_BYTES = 5 * 1024 * 1024  # 5 MB
 
 _logger = logging.getLogger(__name__)
 
+
+def _sniff_image_type(data: bytes) -> str | None:
+    """Identify an image by its magic bytes, ignoring the client-supplied
+    Content-Type (which is trivially spoofable). Returns the MIME type or None."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
 router = APIRouter()
 
 
@@ -106,13 +118,19 @@ async def upload_avatar(
     if not settings.S3_BUCKET_ASSETS:
         raise HTTPException(status_code=503, detail="Avatar upload not configured")
 
-    content_type = file.content_type or ""
-    if content_type not in _ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WebP images accepted")
+    # Reject oversized uploads via the declared size BEFORE buffering the whole
+    # body into memory (avoids a memory-exhaustion vector).
+    if file.size is not None and file.size > _MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=413, detail="Image exceeds 5 MB limit")
 
     data = await file.read()
     if len(data) > _MAX_AVATAR_BYTES:
         raise HTTPException(status_code=413, detail="Image exceeds 5 MB limit")
+
+    # Validate by magic bytes, not the client-supplied Content-Type header.
+    sniffed = _sniff_image_type(data)
+    if sniffed not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, or WebP images accepted")
 
     # Always store as .jpg for consistency; use user_id as stable key so each
     # upload overwrites the previous avatar rather than accumulating orphan files.

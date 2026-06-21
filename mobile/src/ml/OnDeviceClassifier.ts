@@ -80,8 +80,10 @@ export class OnDeviceClassifier {
       // MobileNetV2 expects [1, 128, 128, 3] — replicate single-channel spectrogram 3×
       const input3ch = _replicateChannels(features);
       const outputs: Float32Array[] = this._model.runSync([input3ch]);
-      const logits  = outputs[0];
-      const probs   = _softmax(logits);
+      // The model's final layer is Dense(..., activation='softmax'), so the output
+      // is already a probability distribution. Do NOT re-apply softmax here — that
+      // would compress confidence/intensity toward uniform (0.25) and understate them.
+      const probs   = Array.from(outputs[0]);
       const topIdx  = _argmax(probs);
       return {
         dominantClass: CLASS_NAMES[topIdx],
@@ -114,13 +116,6 @@ function _replicateChannels(spec1ch: Float32Array): Float32Array {
     out[i * 3 + 2] = v;
   }
   return out;
-}
-
-function _softmax(arr: Float32Array): number[] {
-  const max  = Math.max(...arr);
-  const exps = Array.from(arr).map(v => Math.exp(v - max));
-  const sum  = exps.reduce((a, b) => a + b, 0);
-  return exps.map(e => e / sum);
 }
 
 function _argmax(arr: number[]): number {
