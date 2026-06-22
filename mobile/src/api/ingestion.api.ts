@@ -17,6 +17,7 @@ export const uploadBinaryChunk = (
   audioUri: string,
   chunkIndex: number,
   durationSeconds: number,
+  uploadToken?: string | null,
 ): Promise<any> => {
   const formData = new FormData();
   formData.append('audio', {
@@ -26,8 +27,12 @@ export const uploadBinaryChunk = (
   } as any);
   formData.append('chunk_index', String(chunkIndex));
   formData.append('duration_seconds', String(durationSeconds));
+  const headers: Record<string, string> = { 'Content-Type': 'multipart/form-data' };
+  // Capability token (from analytics startSession) proving this user owns the
+  // session — required by ingestion to create a session it didn't itself start.
+  if (uploadToken) headers['X-Upload-Token'] = uploadToken;
   return ingestionClient.post(`/sessions/${sessionId}/chunks`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers,
     timeout: 60000,
   });
 };

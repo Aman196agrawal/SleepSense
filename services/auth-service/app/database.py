@@ -36,8 +36,14 @@ def _run_migrations(eng):
             try:
                 conn.execute(text(stmt))
                 conn.commit()
-            except Exception:
-                pass  # Column already exists — ignore
+            except Exception as exc:
+                conn.rollback()
+                # Only "column already exists" is expected/ignorable; surface anything
+                # else instead of silently hiding a genuine migration failure.
+                msg = str(exc).lower()
+                if "duplicate column" not in msg and "already exists" not in msg:
+                    import logging
+                    logging.getLogger(__name__).warning("Migration step failed: %s (%s)", stmt, exc)
 
 
 _run_migrations(engine)

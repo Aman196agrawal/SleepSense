@@ -65,6 +65,7 @@ export default function RecordScreen({ navigation }: Props) {
   // Refs that survive re-renders during long sessions
   const privacyModeRef   = useRef(false);
   const sessionIdRef     = useRef<string | null>(null);
+  const uploadTokenRef   = useRef<string | null>(null);
   const chunkIdxRef      = useRef(0);
   const chunkTimerRef    = useRef(0);
   const tickTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -184,7 +185,7 @@ export default function RecordScreen({ navigation }: Props) {
         // lightweight local setup) the request fails with a network error; the
         // session still saves via analytics, so log at warn level rather than
         // error to avoid the alarming dev error overlay.
-        IngestionAPI.uploadBinaryChunk(sid, audioUri, idx, CHUNK_SECONDS)
+        IngestionAPI.uploadBinaryChunk(sid, audioUri, idx, CHUNK_SECONDS, uploadTokenRef.current)
           .catch(err => console.warn('binary upload skipped (ingestion-service unavailable)', err?.message ?? err));
       }
     } catch (err) {
@@ -279,6 +280,8 @@ export default function RecordScreen({ navigation }: Props) {
       if (!privacyMode) {
         const res = await AnalyticsAPI.startSession();
         sessionIdRef.current = res.data.session_id;
+        // Capability token authorising ingestion-service chunk uploads for this session.
+        uploadTokenRef.current = res.data.upload_token ?? null;
         await sleepSenseWS.connect();
         wsUnsubsRef.current = [
           sleepSenseWS.on('chunk.analyzed', (data) => {
@@ -399,6 +402,7 @@ export default function RecordScreen({ navigation }: Props) {
     stoppingRef.current  = false;
     chunkBusyRef.current = false;
     sessionIdRef.current = null;
+    uploadTokenRef.current = null;
     setPhase('idle');
     setElapsed(0);
     setIntensity(0);

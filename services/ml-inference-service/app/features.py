@@ -10,13 +10,35 @@ Feature vector (126 dimensions):
   [122]    — Spectral centroid (Hz)
   [123]    — Spectral rolloff (Hz)
   [124]    — Pitch F0 (Hz), 0.0 if unvoiced
-  [125]    — Formant F1 approximation (centroid × 0.5)
+  [125]    — Formant F1 (Hz) estimated via LPC, 0.0 if undetectable
 """
 import numpy as np
 
 SR     = 16_000
 N_MFCC = 40
 FEATURE_DIM = N_MFCC * 3 + 6   # = 126
+
+
+def _estimate_f1(y: np.ndarray, sr: int) -> float:
+    """Estimate the first formant (F1) via LPC root analysis.
+
+    Replaces the old `centroid * 0.5` proxy, which was perfectly collinear with the
+    spectral-centroid feature and therefore carried zero extra information.
+    """
+    try:
+        import librosa
+        # Rule-of-thumb LPC order for formant tracking: 2 + sr/1000.
+        order = 2 + sr // 1000
+        a = librosa.lpc(y.astype(np.float64) + 1e-9, order=order)
+        roots = [r for r in np.roots(a) if np.imag(r) >= 0]
+        freqs = sorted(
+            np.arctan2(np.imag(r), np.real(r)) * (sr / (2 * np.pi)) for r in roots
+        )
+        # F1 is the lowest formant above ~90 Hz (skip near-DC roots).
+        formants = [f for f in freqs if f > 90.0]
+        return float(formants[0]) if formants else 0.0
+    except Exception:
+        return 0.0
 
 
 def extract_features(y: np.ndarray, sr: int = SR) -> np.ndarray:
@@ -51,8 +73,8 @@ def extract_features(y: np.ndarray, sr: int = SR) -> np.ndarray:
     except Exception:
         pitch = 0.0
 
-    # Formant F1 approximation (half of spectral centroid as proxy)
-    formant_f1 = centroid * 0.5
+    # Formant F1 via LPC (a real, non-redundant feature)
+    formant_f1 = _estimate_f1(y, sr)
 
     features = np.concatenate([
         mfcc_mean, delta_mean, delta2_mean,

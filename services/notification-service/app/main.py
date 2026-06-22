@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 import threading
@@ -187,7 +188,7 @@ def purge_user_data(
     from app.models import Notification, DeviceToken
     # Fail closed: an unconfigured (empty) secret must never authorise this
     # destructive purge endpoint, otherwise an empty header would match.
-    if not _s.INTERNAL_API_SECRET or x_internal_secret != _s.INTERNAL_API_SECRET:
+    if not _s.INTERNAL_API_SECRET or not hmac.compare_digest(x_internal_secret or "", _s.INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
     db.query(Notification).filter(Notification.user_id == user_id).delete()
     db.query(DeviceToken).filter(DeviceToken.user_id == user_id).delete()

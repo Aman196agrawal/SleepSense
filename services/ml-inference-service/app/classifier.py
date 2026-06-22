@@ -32,17 +32,16 @@ class SnoreClassifier:
             import torch
             # weights_only=True prevents arbitrary code execution if the model file
             # is tampered with (e.g. replaced in S3). Load state_dict separately.
+            # weights_only=True hardens against pickle code execution, so torch.load
+            # always returns a state_dict (never a full pickled Module) — build the
+            # skeleton and load weights into it.
             state = torch.load(model_path, map_location="cpu", weights_only=True)
-            if isinstance(state, dict):
-                # Caller stored just the state_dict — build model skeleton first
-                from torchvision.models import efficientnet_b0
-                import torch.nn as nn
-                net = efficientnet_b0()
-                net.classifier[1] = nn.Linear(net.classifier[1].in_features, len(CLASSES))
-                net.load_state_dict(state)
-                self._model = net
-            else:
-                self._model = state
+            from torchvision.models import efficientnet_b0
+            import torch.nn as nn
+            net = efficientnet_b0()
+            net.classifier[1] = nn.Linear(net.classifier[1].in_features, len(CLASSES))
+            net.load_state_dict(state)
+            self._model = net
             self._model.eval()
             self.is_stub = False
             _logger.info("Loaded snore classifier from %s", model_path)
@@ -87,11 +86,16 @@ class SnoreClassifier:
     def _torch_predict(self, spectrograms: List[np.ndarray]) -> List[dict]:
         import torch
         results = []
-        for spec in spectrograms:
-            tensor = torch.tensor(spec).unsqueeze(0).unsqueeze(0)   # (1,1,128,128)
-            with torch.no_grad():
-                logits = self._model(tensor)
-                probs  = torch.softmax(logits, dim=-1).squeeze().tolist()
+        if not spectrograms:
+            return []
+        # Stack into a single (N, 3, 128, 128) batch. efficientnet_b0's stem conv
+        # expects 3 channels, so replicate the single mel channel across all three.
+        batch = torch.tensor(np.stack(spectrograms)).unsqueeze(1).repeat(1, 3, 1, 1)
+        with torch.no_grad():
+            logits = self._model(batch)                       # (N, num_classes)
+            probs_batch = torch.softmax(logits, dim=-1).tolist()
+        results = []
+        for probs in probs_batch:
             dominant = int(np.argmax(probs))
             results.append({
                 "dominant_class": CLASSES[dominant],

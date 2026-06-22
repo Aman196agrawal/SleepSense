@@ -1,3 +1,4 @@
+import hmac
 import io
 import json as _json
 import logging
@@ -5,7 +6,7 @@ import urllib.request
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User, UserHealthProfile, RefreshToken, SocialAccount, PasswordResetToken
+from app.models import User, UserHealthProfile, RefreshToken, SocialAccount, PasswordResetToken, EmailVerificationToken
 from app.schemas import (
     UserResponse, UpdateProfileRequest,
     HealthProfileRequest, HealthProfileResponse,
@@ -176,7 +177,7 @@ def get_user_email_internal(
     db: Session = Depends(get_db),
 ):
     """Internal endpoint — returns a user's email for notification dispatch."""
-    if not settings.INTERNAL_API_SECRET or x_internal_secret != settings.INTERNAL_API_SECRET:
+    if not settings.INTERNAL_API_SECRET or not hmac.compare_digest(x_internal_secret or "", settings.INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -192,7 +193,7 @@ def users_with_reminder(
 ):
     """Internal endpoint used by notification-service to send bedtime reminders (FR-GOAL-001).
     Protected by a shared secret header — never call from untrusted clients."""
-    if not settings.INTERNAL_API_SECRET or x_internal_secret != settings.INTERNAL_API_SECRET:
+    if not settings.INTERNAL_API_SECRET or not hmac.compare_digest(x_internal_secret or "", settings.INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
     users = db.query(User).filter(
         User.bedtime_reminder_time == hhmm,
@@ -225,6 +226,7 @@ def delete_me(
 
     # Explicit cascade (SQLite may not enforce FK ON DELETE CASCADE)
     db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user_id).delete()
+    db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user_id).delete()
     db.query(RefreshToken).filter(RefreshToken.user_id == user_id).delete()
     db.query(SocialAccount).filter(SocialAccount.user_id == user_id).delete()
     db.query(UserHealthProfile).filter(UserHealthProfile.user_id == user_id).delete()

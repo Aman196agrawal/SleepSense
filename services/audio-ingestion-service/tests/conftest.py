@@ -65,6 +65,14 @@ def _make_token(user_id: str) -> str:
     return jwt.encode({"sub": user_id, "type": "access"}, TEST_SECRET, algorithm="HS256")
 
 
+def _make_upload_token(session_id: str, user_id: str) -> str:
+    """Mint a session-scoped upload token like analytics-service would."""
+    return jwt.encode(
+        {"sub": session_id, "uid": user_id, "type": "upload"},
+        TEST_SECRET, algorithm="HS256",
+    )
+
+
 @pytest.fixture
 def user_id() -> str:
     return "test-user-uuid-001"
@@ -89,7 +97,10 @@ def active_session(client, auth_headers):
 
 
 def _fake_audio(size_bytes: int = 512) -> bytes:
-    return b"\x00" * size_bytes
+    # Start with a valid Ogg ("OggS") magic header so the upload passes the
+    # server-side audio-signature check, then pad to the requested size.
+    header = b"OggS"
+    return header + b"\x00" * max(0, size_bytes - len(header))
 
 
 def _upload(client, session_id, auth_headers, chunk_index=0, duration=30, size=512):

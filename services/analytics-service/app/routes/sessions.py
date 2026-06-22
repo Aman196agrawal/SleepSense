@@ -20,7 +20,7 @@ from app.models import SleepSession, TimelineBucket, SessionInsight
 from app.routes.ws import manager as ws_manager
 from app.routes.goals import update_goals_for_user
 from app.scoring import INSIGHT_TEMPLATES, compute_score, compute_score_breakdown, grade, make_timeline
-from app.security import get_current_user_id
+from app.security import get_current_user_id, create_upload_token
 from app.seed import seed_user
 
 router = APIRouter()
@@ -153,7 +153,14 @@ def start_session(user_id: str = Depends(get_current_user_id), db: Session = Dep
     db.add(session)
     db.commit()
     db.refresh(session)
-    return {"session_id": session.id, "status": session.status, "started_at": session.started_at}
+    return {
+        "session_id":   session.id,
+        "status":       session.status,
+        "started_at":   session.started_at,
+        # Capability token the client forwards to the ingestion service so it can
+        # authorise chunk uploads for this session without blindly trusting any caller.
+        "upload_token": create_upload_token(session.id, user_id),
+    }
 
 
 @router.post("/{session_id}/end", response_model=SessionResponse)

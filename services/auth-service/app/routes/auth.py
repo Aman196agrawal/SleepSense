@@ -170,6 +170,27 @@ def _revoke_refresh_token(token: str, db: Session) -> None:
 _rl_store: dict[str, list[float]] = {}  # ip → list of request timestamps (in-memory fallback)
 
 
+def client_ip(request: Request) -> str:
+    """Resolve the client IP for rate limiting. Honors X-Forwarded-For only when
+    TRUST_PROXY_HEADERS is set (i.e. we sit behind a trusted proxy); otherwise uses
+    the direct socket peer so clients can't spoof the header to dodge limits."""
+    if settings.TRUST_PROXY_HEADERS:
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _prune_rl_store(window: int) -> None:
+    """Drop in-memory rate-limit keys whose timestamps have all aged out, so the
+    fallback dict can't grow unbounded across many distinct IPs."""
+    if len(_rl_store) < 1024:
+        return
+    now = time.time()
+    for k in [k for k, ts in _rl_store.items() if not ts or now - ts[-1] > window]:
+        _rl_store.pop(k, None)
+
+
 def _check_rate_limit(ip: str, action: str = "login", limit: int = 10, window: int = 900) -> None:
     r = get_redis()
     if r:
@@ -187,6 +208,7 @@ def _check_rate_limit(ip: str, action: str = "login", limit: int = 10, window: i
             _logger.warning("Redis rate-limit check failed — falling back to in-memory", exc_info=True)
 
     now = time.time()
+    _prune_rl_store(window)
     store_key = f"{action}:{ip}"
     timestamps = [t for t in _rl_store.get(store_key, []) if now - t < window]
     timestamps.append(now)
@@ -218,7 +240,7 @@ def _verify_google_token(id_token: str) -> dict:
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
 def register(request: Request, body: RegisterRequest, db: Session = Depends(get_db)):
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     _check_rate_limit(ip, "register", limit=5, window=3600)
 
     if db.query(User).filter(User.email == body.email).first():
@@ -282,7 +304,7 @@ def verify_email(body: VerifyEmailRequest, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     _check_rate_limit(ip)
 
     user = db.query(User).filter(User.email == body.email).first()
@@ -306,7 +328,7 @@ def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/refresh")
 def refresh_token(request: Request, body: RefreshRequest, db: Session = Depends(get_db)):
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     _check_rate_limit(ip, "refresh", limit=30, window=900)
 
     payload = decode_token(body.refresh_token)
@@ -497,7 +519,7 @@ def social_apple(body: SocialLoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/forgot-password")
 def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     _check_rate_limit(ip, "forgot_password")
     user = db.query(User).filter(User.email == body.email).first()
     if user:
@@ -528,7 +550,7 @@ def forgot_password(request: Request, body: ForgotPasswordRequest, db: Session =
 
 @router.post("/reset-password")
 def reset_password(request: Request, body: ResetPasswordRequest, db: Session = Depends(get_db)):
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     _check_rate_limit(ip, "reset_password")
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     prt = db.query(PasswordResetToken).filter(

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AuthAPI from '../api/auth.api';
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from '../api/tokenStore';
 
 interface User {
   id: string;
@@ -23,29 +23,23 @@ interface AuthState {
   hydrate: () => Promise<void>;
 }
 
-// Token storage lives in AsyncStorage and is consumed by the axios interceptor
-// (see ../api/client.ts). We deliberately don't mirror the tokens into Zustand
-// state — nothing in the UI re-renders on token rotation, so keeping them in a
-// reactive store would just be dead weight.
-async function setTokens(access: string, refresh: string) {
-  await AsyncStorage.multiSet([
-    ['access_token',  access],
-    ['refresh_token', refresh],
-  ]);
-}
+// Token storage lives in the device keychain/keystore (see ../api/tokenStore.ts)
+// and is consumed by the axios interceptor (see ../api/client.ts). We deliberately
+// don't mirror the tokens into Zustand state — nothing in the UI re-renders on
+// token rotation, so keeping them in a reactive store would just be dead weight.
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: true,
 
   hydrate: async () => {
-    const token = await AsyncStorage.getItem('access_token');
+    const token = await getAccessToken();
     if (token) {
       try {
         const res = await AuthAPI.getMe();
         set({ user: res.data, isLoading: false });
       } catch {
-        await AsyncStorage.multiRemove(['access_token', 'refresh_token']);
+        await clearTokens();
         set({ isLoading: false });
       }
     } else {
@@ -89,9 +83,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
-    const rt = await AsyncStorage.getItem('refresh_token');
+    const rt = await getRefreshToken();
     if (rt) await AuthAPI.logout(rt).catch(() => {});
-    await AsyncStorage.multiRemove(['access_token', 'refresh_token']);
+    await clearTokens();
     set({ user: null });
   },
 }));

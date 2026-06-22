@@ -3,6 +3,7 @@ import logging
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -29,6 +30,19 @@ def decode_token(token: str) -> dict:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def create_upload_token(session_id: str, user_id: str) -> str:
+    """Mint a session-scoped capability token authorising audio-chunk uploads for
+    this (session_id, user_id) pair. The ingestion service verifies it with the
+    shared SECRET_KEY before accepting uploads for a session it didn't itself create."""
+    payload = {
+        "sub":  session_id,
+        "uid":  user_id,
+        "type": "upload",
+        "exp":  datetime.now(timezone.utc) + timedelta(hours=settings.UPLOAD_TOKEN_TTL_HOURS),
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def _user_exists_in_auth_service(user_id: str, bearer_token: str) -> bool:

@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # Shared secret for service-to-service internal endpoints
     INTERNAL_API_SECRET: str = ""
 
+    # TTL for the session-scoped upload token handed to the client at session start
+    # (verified by the ingestion service to authorise chunk uploads).
+    UPLOAD_TOKEN_TTL_HOURS: int = 12
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

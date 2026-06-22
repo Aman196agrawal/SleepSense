@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import Constants from 'expo-constants';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './tokenStore';
 
 const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, string | undefined>;
 const devHost = Constants.expoConfig?.hostUri?.split(':')[0] ?? 'localhost';
@@ -27,7 +27,7 @@ export const ingestionClient = axios.create({ baseURL: INGESTION_URL, timeout: 3
 // ── Token attach ──────────────────────────────────────────────────────────────
 
 const attachToken = async (config: InternalAxiosRequestConfig) => {
-  const token = await AsyncStorage.getItem('access_token');
+  const token = await getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 };
@@ -55,15 +55,14 @@ function processQueue(error: unknown, token: string | null) {
 }
 
 async function attemptTokenRefresh(): Promise<string> {
-  const refreshToken = await AsyncStorage.getItem('refresh_token');
+  const refreshToken = await getRefreshToken();
   if (!refreshToken) throw new Error('No refresh token');
 
   const { data } = await axios.post(`${AUTH_URL}/auth/refresh`, { refresh_token: refreshToken });
   const newAccess: string = data.access_token;
   const newRefresh: string | undefined = data.refresh_token;
 
-  await AsyncStorage.setItem('access_token', newAccess);
-  if (newRefresh) await AsyncStorage.setItem('refresh_token', newRefresh);
+  await setTokens(newAccess, newRefresh);
 
   return newAccess;
 }
@@ -95,7 +94,7 @@ function attachRefreshInterceptor(client: AxiosInstance) {
         return client(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
-        await AsyncStorage.multiRemove(['access_token', 'refresh_token']);
+        await clearTokens();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

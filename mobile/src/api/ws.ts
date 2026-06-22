@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAccessToken } from './tokenStore';
 import { ANALYTICS_URL } from './client';
 
 type WSEvent = { event: string; data?: any };
@@ -10,7 +10,7 @@ class SleepSenseWS {
 
   async connect(): Promise<void> {
     if (this.ws) return;
-    const token = await AsyncStorage.getItem('access_token');
+    const token = await getAccessToken();
     if (!token) return;
     const wsBase = ANALYTICS_URL.replace(/^http/, 'ws');
     const url = `${wsBase}/ws?token=${encodeURIComponent(token)}`;

@@ -9,7 +9,7 @@ _UUID_RE = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I
 )
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -19,13 +19,31 @@ from app.kafka_client import emit
 from app.models import AudioChunk, SleepSession
 from app.redis_client import get_session_status, set_session_status
 from app.s3_client import upload_chunk as s3_upload, delete_session_audio as s3_delete_session
-from app.security import create_upload_token, get_current_user_id
+from app.security import create_upload_token, get_current_user_id, verify_upload_token
 from app.config import settings
 
 router = APIRouter()
 
 ALLOWED_MIME_TYPES = {"audio/opus", "audio/wav", "audio/m4a", "audio/x-m4a", "audio/mpeg", "audio/webm"}
 MAX_CHUNK_BYTES = settings.MAX_CHUNK_SIZE_MB * 1024 * 1024
+
+
+def _looks_like_audio(data: bytes) -> bool:
+    """Verify the uploaded bytes actually start with a known audio container
+    signature, rather than trusting the client-supplied Content-Type header."""
+    if len(data) < 12:
+        return False
+    if data[:4] == b"OggS":                                   # Ogg (Opus/Vorbis)
+        return True
+    if data[:4] == b"RIFF" and data[8:12] == b"WAVE":         # WAV
+        return True
+    if data[4:8] == b"ftyp":                                  # MP4 / M4A
+        return True
+    if data[:3] == b"ID3" or data[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):  # MP3
+        return True
+    if data[:4] == b"\x1a\x45\xdf\xa3":                       # WebM / Matroska
+        return True
+    return False
 
 # In-memory fallback for chunk rate limiting when Redis is unavailable
 _chunk_rl: dict[str, list[float]] = {}
@@ -76,7 +94,7 @@ def start_session(
 
     return {
         "session_id":    session.id,
-        "upload_token":  create_upload_token(session.id),
+        "upload_token":  create_upload_token(session.id, user_id),
         "status":        session.status,
         "started_at":    session.started_at.isoformat(),
     }
@@ -91,6 +109,7 @@ async def upload_chunk(
     duration_seconds: int = Form(..., ge=1, le=300),
     audio: UploadFile     = File(...),
     user_id: str          = Depends(get_current_user_id),
+    x_upload_token: str | None = Header(None, alias="X-Upload-Token"),
     db: Session           = Depends(get_db),
 ):
     _check_chunk_rate_limit(user_id)
@@ -115,8 +134,16 @@ async def upload_chunk(
             raise HTTPException(status_code=404, detail="Session not found or not in recording state")
         session = existing
     else:
-        # Auto-register shadow record: mobile created the session via analytics-service
-        # using the same session_id. Ingestion-service creates its own record for S3 tracking.
+        # Unknown session: it was created elsewhere (analytics-service). Only create
+        # the ingestion-side record if the caller presents a valid session-scoped
+        # upload token bound to (session_id, user_id) — otherwise any authenticated
+        # user could claim an arbitrary session_id (the upload token is the proof of
+        # legitimate session creation, replacing the old blind shadow-create).
+        if not x_upload_token:
+            raise HTTPException(status_code=403, detail="Upload token required to create this session")
+        token_uid = verify_upload_token(x_upload_token, session_id)
+        if token_uid != user_id:
+            raise HTTPException(status_code=403, detail="Upload token does not belong to this user")
         session = SleepSession(
             id=session_id,
             user_id=user_id,
@@ -134,6 +161,13 @@ async def upload_chunk(
             detail=f"chunk_index must be sequential; expected {existing_count}, got {chunk_index}",
         )
 
+    # Reject oversized uploads via the declared size before buffering the body.
+    if audio.size is not None and audio.size > MAX_CHUNK_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Audio chunk exceeds maximum size of {settings.MAX_CHUNK_SIZE_MB} MB",
+        )
+
     # Read body and enforce size limit
     audio_bytes = await audio.read()
     file_size = len(audio_bytes)
@@ -142,6 +176,10 @@ async def upload_chunk(
             status_code=413,
             detail=f"Audio chunk exceeds maximum size of {settings.MAX_CHUNK_SIZE_MB} MB",
         )
+
+    # Validate the actual bytes, not just the spoofable Content-Type header.
+    if not _looks_like_audio(audio_bytes):
+        raise HTTPException(status_code=400, detail="Uploaded data is not a recognised audio format")
 
     # S3 upload (best-effort — never blocks the response)
     s3_key = f"{user_id}/{session_id}/chunk_{chunk_index:03d}.opus"
@@ -247,17 +285,19 @@ def get_status(
     user_id: str    = Depends(get_current_user_id),
     db: Session     = Depends(get_db),
 ):
-    # Redis cache hit
-    cached = get_session_status(session_id)
-    if cached:
-        return cached
-
+    # Enforce ownership BEFORE serving from cache — otherwise any authenticated
+    # user who knows a session_id could read another user's processing status.
     session = db.query(SleepSession).filter(
         SleepSession.id == session_id,
         SleepSession.user_id == user_id,
     ).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # Redis cache hit (only reached after ownership is confirmed)
+    cached = get_session_status(session_id)
+    if cached:
+        return cached
 
     total     = session.total_chunks or 0
     processed = db.query(AudioChunk).filter(

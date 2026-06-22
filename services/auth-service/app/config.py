@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # Comma-separated origin allowlist for CORS. Use "*" only for dev.
     CORS_ALLOWED_ORIGINS: str = "http://localhost:8081,http://localhost:19006,http://localhost:3000"
 
+    # Set True ONLY when running behind a trusted reverse proxy / load balancer that
+    # sets X-Forwarded-For. When True, rate limiting uses the client IP from that
+    # header; otherwise it trusts the direct socket peer (default — avoids spoofing).
+    TRUST_PROXY_HEADERS: bool = False
+
     # SendGrid — leave blank to skip email sending (dev / test environments)
     SENDGRID_API_KEY: str = ""
     SENDGRID_FROM_EMAIL: str = "noreply@sleepsense.app"

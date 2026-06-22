@@ -1,4 +1,6 @@
 """Internal admin endpoints — called by auth-service for GDPR account deletion."""
+import hmac
+
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
@@ -18,7 +20,7 @@ def gdpr_delete_user_audio(
 ):
     # Fail closed: an unconfigured (empty) secret must never authorise this
     # destructive GDPR endpoint, otherwise an empty header would match.
-    if not settings.INTERNAL_API_SECRET or x_internal_secret != settings.INTERNAL_API_SECRET:
+    if not settings.INTERNAL_API_SECRET or not hmac.compare_digest(x_internal_secret or "", settings.INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
     """Delete all S3 audio and ingestion DB records for a user (GDPR erasure)."""
     deleted_s3 = delete_user_audio(user_id)

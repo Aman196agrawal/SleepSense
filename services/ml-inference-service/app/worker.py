@@ -4,7 +4,7 @@ Called by the Kafka consumer for each audio.chunk.uploaded event.
 """
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 import numpy as np
@@ -13,7 +13,6 @@ from app.aggregator import aggregate
 from app.classifier import SnoreClassifier
 from app.features import extract_features
 from app.preprocessing import preprocess_chunk
-from app.redis_client import get_inference_cache, set_inference_cache
 from app.regressor import IntensityRegressor
 
 _logger = logging.getLogger(__name__)
@@ -35,6 +34,7 @@ def process_chunk(
     db,
     influx_write,
     kafka_emit:      Callable,
+    chunk_started_at: Optional[datetime] = None,
 ) -> dict:
     """
     Run the full inference pipeline for one 30-second audio chunk.
@@ -65,13 +65,10 @@ def process_chunk(
     for i, (cls, win) in enumerate(zip(classifications, audio_windows)):
         intensity = 0.0
         if cls["dominant_class"] == "snoring":
-            feats  = extract_features(win)
-            cached = get_inference_cache(feats)
-            if cached is not None:
-                intensity = cached
-            else:
-                intensity = regressor.predict(feats)
-                set_inference_cache(feats, intensity)
+            # Features come from continuous real audio, so they're never byte-identical
+            # between windows — a result cache here would have a ~0% hit rate, so we
+            # call the regressor directly instead of paying a Redis round-trip.
+            intensity = regressor.predict(extract_features(win))
         window_results.append({
             "start_sec":  round(i * HOP_SECS, 1),
             "end_sec":    round(i * HOP_SECS + WINDOW_SECS, 1),
@@ -83,8 +80,8 @@ def process_chunk(
     # 4. Aggregate
     summary = aggregate(window_results)
 
-    # 5a. Write to InfluxDB
-    _write_influx(influx_write, session_id, user_id, chunk_index, window_results)
+    # 5a. Write to InfluxDB (time-stamped on the real overnight axis)
+    _write_influx(influx_write, session_id, user_id, chunk_index, window_results, chunk_started_at)
 
     # 5b. Update audio_chunks row in PostgreSQL
     _update_db(db, chunk_id, summary)
@@ -104,11 +101,13 @@ def process_chunk(
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _write_influx(write_api, session_id: str, user_id: str, chunk_index: int, results: list):
+def _write_influx(write_api, session_id: str, user_id: str, chunk_index: int, results: list,
+                  chunk_started_at: Optional[datetime] = None):
     if write_api is None:
         return
     try:
         from influxdb_client import Point
+        from influxdb_client.client.write_api import WritePrecision
         from app.config import settings
         for r in results:
             point = (
@@ -121,6 +120,12 @@ def _write_influx(write_api, session_id: str, user_id: str, chunk_index: int, re
                 .field("chunk_index",  int(chunk_index))
                 .field("start_sec",    float(r["start_sec"]))
             )
+            # Stamp each event with its real position on the overnight timeline
+            # (chunk upload time + within-chunk offset). Without this, every event
+            # would default to write time and all events in a chunk would collapse
+            # to one instant.
+            if chunk_started_at is not None:
+                point.time(chunk_started_at + timedelta(seconds=r["start_sec"]), WritePrecision.MS)
             write_api.write(bucket=settings.INFLUXDB_BUCKET, org=settings.INFLUXDB_ORG, record=point)
     except Exception as exc:
         _logger.warning("InfluxDB write failed: %s", exc)

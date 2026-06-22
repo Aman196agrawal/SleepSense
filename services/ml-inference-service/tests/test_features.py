@@ -85,9 +85,12 @@ class TestFeatureSlices:
         feats = extract_features(_window())
         assert feats[124] >= 0.0
 
-    def test_formant_f1_equals_half_centroid(self):
+    def test_formant_f1_is_plausible_frequency(self):
+        # formant_f1 is now a real LPC estimate (no longer centroid*0.5), so it
+        # should be a non-negative frequency within the audible/Nyquist range.
         feats = extract_features(_window())
-        assert abs(feats[125] - feats[122] * 0.5) < 1e-3
+        assert feats[125] >= 0.0
+        assert feats[125] <= 8_000.0
 
 
 # ── Behavioural ────────────────────────────────────────────────────────────────

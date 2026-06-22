@@ -1,3 +1,4 @@
+import hmac
 import logging
 import threading
 from contextlib import asynccontextmanager
@@ -65,7 +66,7 @@ def purge_user_data(
 ):
     """Internal endpoint — called by auth-service on account deletion to purge analytics data.
     Protected by a shared secret header — never call from untrusted clients."""
-    if not settings.INTERNAL_API_SECRET or x_internal_secret != settings.INTERNAL_API_SECRET:
+    if not settings.INTERNAL_API_SECRET or not hmac.compare_digest(x_internal_secret or "", settings.INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
     db.query(UserGoal).filter(UserGoal.user_id == user_id).delete()
     db.query(LifestyleLog).filter(LifestyleLog.user_id == user_id).delete()
@@ -88,7 +89,7 @@ def get_recent_scores(
     db: Session = Depends(get_db),
 ):
     """Internal — returns the N most recent sleep quality scores for health alert logic."""
-    if not settings.INTERNAL_API_SECRET or x_internal_secret != settings.INTERNAL_API_SECRET:
+    if not settings.INTERNAL_API_SECRET or not hmac.compare_digest(x_internal_secret or "", settings.INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
     rows = (
         db.query(SleepSession.sleep_quality_score)

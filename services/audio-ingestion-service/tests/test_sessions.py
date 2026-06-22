@@ -138,6 +138,53 @@ class TestUploadChunk:
         assert resp.status_code == 202
 
 
+# ── Upload-token authorisation for analytics-created sessions ──────────────────
+
+import uuid as _uuid
+from tests.conftest import _make_upload_token
+
+
+def _upload_with_token(client, session_id, auth_headers, token, chunk_index=0):
+    headers = {**auth_headers}
+    if token is not None:
+        headers["X-Upload-Token"] = token
+    return client.post(
+        f"/sessions/{session_id}/chunks",
+        files={"audio": ("chunk.opus", BytesIO(_fake_audio()), "audio/opus")},
+        data={"chunk_index": str(chunk_index), "duration_seconds": "30"},
+        headers=headers,
+    )
+
+
+class TestUploadTokenAuthorization:
+    """A session created elsewhere (analytics-service) is unknown to ingestion;
+    creating its record now requires a valid session-scoped upload token."""
+
+    def test_unknown_session_without_token_is_forbidden(self, client, auth_headers):
+        sid = str(_uuid.uuid4())
+        resp = _upload_with_token(client, sid, auth_headers, token=None)
+        assert resp.status_code == 403
+
+    def test_unknown_session_with_valid_token_is_accepted(self, client, auth_headers, user_id):
+        sid = str(_uuid.uuid4())
+        token = _make_upload_token(sid, user_id)
+        resp = _upload_with_token(client, sid, auth_headers, token=token)
+        assert resp.status_code == 202
+
+    def test_token_for_another_user_is_forbidden(self, client, auth_headers):
+        sid = str(_uuid.uuid4())
+        # Token bound to a different user than the authenticated caller
+        token = _make_upload_token(sid, "someone-else-uuid")
+        resp = _upload_with_token(client, sid, auth_headers, token=token)
+        assert resp.status_code == 403
+
+    def test_token_scoped_to_other_session_is_rejected(self, client, auth_headers, user_id):
+        sid = str(_uuid.uuid4())
+        token = _make_upload_token(str(_uuid.uuid4()), user_id)  # different session_id
+        resp = _upload_with_token(client, sid, auth_headers, token=token)
+        assert resp.status_code == 401
+
+
 # ── POST /sessions/{id}/end ────────────────────────────────────────────────────
 
 class TestEndSession:
