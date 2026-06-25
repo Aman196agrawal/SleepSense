@@ -5,9 +5,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudioRecorder, type AudioDataEvent } from '@siteed/expo-audio-studio';
+import { AudioModule } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import { Colors, Radii, Spacing, Elevation, Gradients } from '../theme';
+import { Colors, Radii, Elevation, Gradients } from '../theme';
 import type { MainTabParams } from '../navigation/MainNavigator';
 import AuroraBackground from '../components/AuroraBackground';
 import GlassCard from '../components/GlassCard';
@@ -267,6 +268,18 @@ export default function RecordScreen({ navigation }: Props) {
   const startRecordingSession = async () => {
     Vibration.vibrate(30);
     try {
+      // Request the mic permission explicitly (app-level on Android/iOS, so this
+      // also satisfies the audio-studio recorder) and keep the friendly prompt.
+      const { granted } = await AudioModule.requestRecordingPermissionsAsync();
+      if (!granted) {
+        Alert.alert(
+          'Microphone required',
+          'Please allow microphone access in your device settings to record sleep audio.'
+        );
+        setPhase('idle');
+        return;
+      }
+
       privacyModeRef.current = privacyMode;
       if (!privacyMode) {
         const res = await AnalyticsAPI.startSession();
