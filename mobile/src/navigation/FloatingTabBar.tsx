@@ -12,6 +12,7 @@ const ICONS: Record<string, { d: keyof typeof Ionicons.glyphMap; f: keyof typeof
   Record:  { d: 'mic-outline',      f: 'mic' },
   History: { d: 'bar-chart-outline',f: 'bar-chart' },
   Profile: { d: 'person-outline',   f: 'person' },
+  Spectro: { d: 'analytics-outline',f: 'analytics' }, // TEMP: verification tab
 };
 
 export default function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {

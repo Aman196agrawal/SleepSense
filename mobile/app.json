@@ -42,6 +42,12 @@
       "react-native-fast-tflite",
       "expo-web-browser",
       [
+        "@siteed/audio-studio",
+        {
+          "microphonePermission": "Allow SleepSense to access your microphone to record sleep audio."
+        }
+      ],
+      [
         "expo-audio",
         {
           "microphonePermission": "Allow SleepSense to access your microphone to record sleep audio."

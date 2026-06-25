@@ -12,6 +12,7 @@ import LifestyleLogScreen  from '../screens/LifestyleLogScreen';
 import HealthProfileScreen from '../screens/HealthProfileScreen';
 import GoalsScreen        from '../screens/GoalsScreen';
 import CalendarScreen    from '../screens/CalendarScreen';
+import SpectrogramTestScreen from '../screens/SpectrogramTestScreen'; // TEMP: live-spectrogram pipeline verification
 
 // ── Stack param types ────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ export type MainTabParams = {
   Log:     undefined;
   History: undefined;
   Profile: undefined;
+  Spectro: undefined;   // TEMP: live-spectrogram verification tab
 };
 
 export type HomeStackNav    = NativeStackNavigationProp<HomeStackParams>;
@@ -90,6 +92,8 @@ export default function MainNavigator() {
       <Tab.Screen name="Record"  component={RecordScreen} />
       <Tab.Screen name="History" component={HistoryStack} />
       <Tab.Screen name="Profile" component={ProfileStack} />
+      {/* TEMP: remove once the live spectrogram is integrated into RecordScreen */}
+      <Tab.Screen name="Spectro" component={SpectrogramTestScreen} />
     </Tab.Navigator>
   );
 }

@@ -19,10 +19,30 @@ _NOVERLAP = 512
 _FMAX = 2000          # snore energy lives below ~2 kHz; crop for a readable view
 _DB_FLOOR, _DB_CEIL = -110, -50
 
+# Mel-spectrogram params — kept in sync with src/features.py so the picture matches
+# what the on-device CNN actually consumes.
+_N_MELS, _MEL_NFFT, _MEL_HOP, _MEL_FMIN, _MEL_FMAX = 128, 1024, 512, 50, 8000
+
 
 def _spectrogram_db(y: np.ndarray, sr: int):
     f, t, S = signal.spectrogram(y, sr, nperseg=_NPERSEG, noverlap=_NOVERLAP)
     return f, t, 10 * np.log10(S + 1e-12)
+
+
+def draw_mel_spectrogram(ax, y: np.ndarray, sr: int, title: str = "", fmax: int = _MEL_FMAX):
+    """Draw a log-mel spectrogram (the CNN's input view) onto an existing Axes.
+    Mel params mirror src/features.py. Returns the image (for colorbars)."""
+    import librosa
+    import librosa.display
+    S = librosa.feature.melspectrogram(y=y, sr=sr, n_fft=_MEL_NFFT, hop_length=_MEL_HOP,
+                                       n_mels=_N_MELS, fmin=_MEL_FMIN, fmax=fmax)
+    S_db = librosa.power_to_db(S, ref=np.max)
+    img = librosa.display.specshow(S_db, sr=sr, hop_length=_MEL_HOP, x_axis="time",
+                                   y_axis="mel", fmin=_MEL_FMIN, fmax=fmax, ax=ax,
+                                   cmap="magma", vmin=-80, vmax=0)
+    if title:
+        ax.set_title(title, fontsize=10)
+    return img
 
 
 def draw_spectrogram(ax, y: np.ndarray, sr: int, title: str = "", fmax: int = _FMAX):
@@ -40,25 +60,31 @@ def draw_spectrogram(ax, y: np.ndarray, sr: int, title: str = "", fmax: int = _F
 
 def raw_vs_clean(raw: np.ndarray, clean: np.ndarray, sr: int,
                  raw_title: str = "RAW", clean_title: str = "CLEANED",
-                 fmax: int = _FMAX):
-    """Stacked raw-vs-clean spectrogram comparison. Returns a matplotlib Figure."""
+                 fmax: int | None = None, mel: bool = False):
+    """Stacked raw-vs-clean comparison. mel=True draws log-mel (the CNN's view)
+    instead of the linear STFT spectrogram. Returns a matplotlib Figure."""
     import matplotlib.pyplot as plt
+    draw = draw_mel_spectrogram if mel else draw_spectrogram
+    fm = fmax if fmax is not None else (_MEL_FMAX if mel else _FMAX)
     fig, ax = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
-    draw_spectrogram(ax[0], raw, sr, raw_title, fmax)
-    mesh = draw_spectrogram(ax[1], clean, sr, clean_title, fmax)
-    fig.colorbar(mesh, ax=ax, label="dB", pad=0.01)
+    draw(ax[0], raw, sr, raw_title, fm)
+    img = draw(ax[1], clean, sr, clean_title, fm)
+    fig.colorbar(img, ax=ax, label="dB", pad=0.01)
     return fig
 
 
 def presets_grid(raw: np.ndarray, cleaned: dict[str, np.ndarray], sr: int,
-                 fmax: int = _FMAX):
-    """One spectrogram row for RAW + each preset in `cleaned` (label -> waveform)."""
+                 fmax: int | None = None, mel: bool = False):
+    """One spectrogram row for RAW + each preset in `cleaned` (label -> waveform).
+    mel=True renders log-mel spectrograms (the CNN input view)."""
     import matplotlib.pyplot as plt
+    draw = draw_mel_spectrogram if mel else draw_spectrogram
+    fm = fmax if fmax is not None else (_MEL_FMAX if mel else _FMAX)
     rows = 1 + len(cleaned)
     fig, ax = plt.subplots(rows, 1, figsize=(14, 3 * rows), sharex=True)
-    draw_spectrogram(ax[0], raw, sr, "RAW", fmax)
+    draw(ax[0], raw, sr, "RAW", fm)
     for i, (label, y) in enumerate(cleaned.items(), start=1):
-        draw_spectrogram(ax[i], y, sr, label, fmax)
+        draw(ax[i], y, sr, label, fm)
     fig.tight_layout()
     return fig
 
