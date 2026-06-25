@@ -47,9 +47,8 @@ export function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-/** Decode base64-encoded little-endian PCM16 into Float32 samples in [-1, 1]. */
-export function pcm16Base64ToFloat32(b64: string): Float32Array {
-  const bytes = base64ToBytes(b64);
+/** Decode raw little-endian PCM16 bytes into Float32 samples in [-1, 1]. */
+export function pcm16BytesToFloat32(bytes: Uint8Array): Float32Array {
   const n = bytes.length >> 1;
   const out = new Float32Array(n);
   for (let i = 0; i < n; i++) {
@@ -59,6 +58,11 @@ export function pcm16Base64ToFloat32(b64: string): Float32Array {
     out[i] = s / 32768;
   }
   return out;
+}
+
+/** Decode base64-encoded little-endian PCM16 into Float32 samples in [-1, 1]. */
+export function pcm16Base64ToFloat32(b64: string): Float32Array {
+  return pcm16BytesToFloat32(base64ToBytes(b64));
 }
 
 // ── mel filterbank + window (precomputed once) ──────────────────────────────────

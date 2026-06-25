@@ -1,36 +1,44 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Platform, AppState, AppStateStatus, Vibration } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Platform, AppState, AppStateStatus, Vibration, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  useAudioRecorder,
-  RecordingPresets,
-  AudioModule,
-  setAudioModeAsync,
-} from 'expo-audio';
+import { useAudioRecorder, type AudioDataEvent } from '@siteed/expo-audio-studio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { Colors, Radii, Spacing, Elevation, Gradients } from '../theme';
 import type { MainTabParams } from '../navigation/MainNavigator';
 import AuroraBackground from '../components/AuroraBackground';
 import GlassCard from '../components/GlassCard';
+import { LiveSpectrogram, type LiveSpectrogramHandle } from '../components/LiveSpectrogram';
+import {
+  MelSpectrogramStreamer, base64ToBytes, pcm16BytesToFloat32, MEL_DISPLAY, SR,
+} from '../ml/spectrogram';
+import { encodeWavBase64 } from '../ml/wav';
 import * as AnalyticsAPI from '../api/analytics.api';
 import * as IngestionAPI from '../api/ingestion.api';
 import { sleepSenseWS } from '../api/ws';
-import {
-  startForegroundAudioNotification,
-  stopForegroundAudioNotification,
-} from '../utils/foregroundService';
 import { onDeviceClassifier } from '../ml/OnDeviceClassifier';
 
-// expo-audio metering: 0 dB = max, -160 dB = silence. Map [-60, -5] → [0, 100].
-// NOTE: this is loudness-based heuristic detection. The CNN classifier
-// described in the marketing copy is on the roadmap but not shipped yet.
+// Live audio level is now derived from the PCM stream as RMS dBFS (0 dB = full
+// scale, ~-80 dB = silence) instead of the recorder's metering API. Map the
+// useful snore band [-60, -5] dBFS → [0, 100] intensity.
+// NOTE: this is still loudness-based heuristic detection; the CNN classifier is
+// on the roadmap (Privacy Mode already runs the on-device TFLite model).
 const DB_FLOOR = -60;
 const DB_CEIL  = -5;
 const dbToIntensity = (db: number): number =>
   Math.round(Math.max(0, Math.min(100, ((db - DB_FLOOR) / (DB_CEIL - DB_FLOOR)) * 100)));
+
+/** RMS level of a PCM frame as dBFS. */
+const rmsDbfs = (pcm: Float32Array): number => {
+  if (pcm.length === 0) return DB_FLOOR;
+  let sum = 0;
+  for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
+  const rms = Math.sqrt(sum / pcm.length);
+  return 20 * Math.log10(rms + 1e-7);
+};
 
 type SoundInfo = { label: string; cls: string; color: string; icon: keyof typeof Ionicons.glyphMap };
 const classify = (lvl: number): SoundInfo => {
@@ -41,8 +49,11 @@ const classify = (lvl: number): SoundInfo => {
 };
 
 const CHUNK_SECONDS    = 30;
-const BAR_COUNT        = 22;
 const METER_POLL_MS    = 200;
+
+const { width: SCREEN_W } = Dimensions.get('window');
+const SPEC_W = Math.round(SCREEN_W - 64);
+const SPEC_H = 150;
 
 type Phase = 'idle' | 'recording' | 'stopping';
 
@@ -56,11 +67,12 @@ export default function RecordScreen({ navigation }: Props) {
   const [chunkCount, setChunkCount] = useState(0);
   const [privacyMode, setPrivacyMode] = useState(false);
 
-  // expo-audio recorder — metering enabled so we can read `currentMetering`.
-  const recorder = useAudioRecorder({
-    ...RecordingPresets.HIGH_QUALITY,
-    isMeteringEnabled: true,
-  });
+  // Continuous PCM recorder (one stream → live spectrogram + metering + chunking).
+  const { startRecording, stopRecording } = useAudioRecorder();
+
+  // Live spectrogram pipeline
+  const streamerRef = useRef(new MelSpectrogramStreamer(MEL_DISPLAY));
+  const specRef     = useRef<LiveSpectrogramHandle>(null);
 
   // Refs that survive re-renders during long sessions
   const privacyModeRef   = useRef(false);
@@ -74,6 +86,11 @@ export default function RecordScreen({ navigation }: Props) {
   const chunkBusyRef     = useRef(false);
   const appStateRef      = useRef<AppStateStatus>(AppState.currentState);
   const wsUnsubsRef      = useRef<(() => void)[]>([]);
+  const actualSampleRateRef = useRef<number>(SR);
+  // Raw PCM16 bytes accumulated since the last chunk flush (for WAV assembly).
+  const pcmBufRef        = useRef<Uint8Array[]>([]);
+  // Most recent RMS dBFS reading, sampled by the UI/stats tick.
+  const latestDbRef      = useRef<number>(DB_FLOOR);
   // Rolling window of dBFS readings fed to the on-device TFLite classifier
   const meteringHistRef  = useRef<number[]>([]);
   const statsRef         = useRef<{ intensities: number[]; classes: string[]; events: number }>({
@@ -81,24 +98,6 @@ export default function RecordScreen({ navigation }: Props) {
   });
 
   const pulse = useRef(new Animated.Value(1)).current;
-  const bars  = useRef(
-    Array.from({ length: BAR_COUNT }, () => new Animated.Value(4))
-  ).current;
-
-  // Animate waveform bars from current level
-  const animateBars = useCallback((lvl: number) => {
-    bars.forEach((bar, i) => {
-      // Neighbour bars mirror each other for a symmetric waveform look
-      const mirror = Math.abs(i - BAR_COUNT / 2) / (BAR_COUNT / 2);
-      const target = Math.max(4, lvl * 0.55 * (1 - mirror * 0.4) * (0.7 + Math.random() * 0.6));
-      Animated.spring(bar, {
-        toValue: Math.min(target, 52),
-        useNativeDriver: false,
-        speed: 28,
-        bounciness: 2,
-      }).start();
-    });
-  }, [bars]);
 
   // Pulse the mic button while recording
   useEffect(() => {
@@ -112,11 +111,10 @@ export default function RecordScreen({ navigation }: Props) {
     } else {
       pulse.stopAnimation();
       pulse.setValue(1);
-      animateBars(0);
     }
-  }, [phase, pulse, animateBars]);
+  }, [phase, pulse]);
 
-  // Cleanup on unmount: kill any in-flight timers / recording.
+  // Cleanup on unmount: kill any in-flight timers.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       appStateRef.current = next;
@@ -143,21 +141,46 @@ export default function RecordScreen({ navigation }: Props) {
     }
   }, [privacyMode]);
 
-  // Upload current chunk: JSON stats to analytics-service + binary audio to ingestion-service.
-  // Binary upload stops and restarts the recorder to capture a discrete 30s file.
+  // Continuous PCM callback: drive the live spectrogram, track the live level,
+  // and accumulate raw bytes for the next 30s chunk upload.
+  const onAudioStream = useCallback(async (event: AudioDataEvent) => {
+    try {
+      if (typeof event.data !== 'string') {
+        // Web delivers a typed array; native (our target) delivers base64.
+        const pcmWeb = Float32Array.from(event.data as Float32Array);
+        const colsWeb = streamerRef.current.push(pcmWeb);
+        if (colsWeb.length) specRef.current?.pushColumns(colsWeb);
+        latestDbRef.current = rmsDbfs(pcmWeb);
+        return;
+      }
+      const bytes = base64ToBytes(event.data);          // raw PCM16 LE
+      const pcm = pcm16BytesToFloat32(bytes);
+      const cols = streamerRef.current.push(pcm);
+      if (cols.length) specRef.current?.pushColumns(cols);
+      latestDbRef.current = rmsDbfs(pcm);
+      // Only buffer audio for upload in a non-private, server-backed session.
+      if (!privacyModeRef.current && sessionIdRef.current) pcmBufRef.current.push(bytes);
+    } catch (err) {
+      console.warn('audio stream handler failed', err);
+    }
+  }, []);
+
+  // Assemble the buffered PCM into a 30s WAV and upload it (binary → ingestion),
+  // plus post the aggregated stats JSON → analytics. No recorder stop/restart.
   const flushChunk = useCallback(async () => {
     if (chunkBusyRef.current) return; // previous chunk still uploading — skip this tick
-    const sid  = sessionIdRef.current;
-    const idx  = chunkIdxRef.current;
+    const sid   = sessionIdRef.current;
+    const idx   = chunkIdxRef.current;
     const stats = statsRef.current;
     if (!sid || privacyModeRef.current) {
       statsRef.current = { intensities: [], classes: [], events: 0 };
+      pcmBufRef.current = [];
       return;
     }
 
     chunkBusyRef.current = true;
 
-    // ── JSON stats → analytics-service (existing path, fire-and-forget) ──
+    // ── JSON stats → analytics-service (fire-and-forget) ──
     if (stats.intensities.length > 0) {
       const avgIntensity = stats.intensities.reduce((a, b) => a + b, 0) / stats.intensities.length;
       const counts: Record<string, number> = {};
@@ -172,56 +195,38 @@ export default function RecordScreen({ navigation }: Props) {
     }
 
     // ── Binary audio → ingestion-service ──
-    // Stop recorder to get file URI, upload asynchronously, then restart.
-    try {
-      await recorder.stop();
-      const audioUri = (recorder as any).uri as string | undefined;
-      if (!audioUri) {
-        console.warn('[RecordScreen] recorder.uri unavailable — binary chunk upload skipped');
+    // Assemble a discrete WAV from the bytes streamed over the last ~30s, write
+    // it to a temp file, upload, then delete. The recorder keeps running, so the
+    // stream is gapless (unlike the old stop/restart approach).
+    const pcmChunks = pcmBufRef.current;
+    pcmBufRef.current = [];
+    if (pcmChunks.length > 0) {
+      try {
+        const b64 = encodeWavBase64(pcmChunks, actualSampleRateRef.current, 1, 16);
+        const uri = `${FileSystem.cacheDirectory}chunk_${idx}.wav`;
+        await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
+        // Binary upload is optional — it feeds the server-side ML pipeline. When
+        // ingestion-service isn't running the request fails; the session still
+        // saves via analytics, so log at warn level. Clean up the temp file after.
+        IngestionAPI.uploadBinaryChunk(sid, uri, idx, CHUNK_SECONDS, uploadTokenRef.current)
+          .catch(err => console.warn('binary upload skipped (ingestion-service unavailable)', err?.message ?? err))
+          .finally(() => { FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {}); });
+      } catch (err) {
+        console.warn('chunk assembly failed', err);
       }
-      if (audioUri) {
-        // Binary audio upload is optional — it feeds the server-side ML pipeline
-        // (ingestion-service). When that service isn't running (e.g. the
-        // lightweight local setup) the request fails with a network error; the
-        // session still saves via analytics, so log at warn level rather than
-        // error to avoid the alarming dev error overlay.
-        IngestionAPI.uploadBinaryChunk(sid, audioUri, idx, CHUNK_SECONDS, uploadTokenRef.current)
-          .catch(err => console.warn('binary upload skipped (ingestion-service unavailable)', err?.message ?? err));
-      }
-    } catch (err) {
-      console.error('recorder cycle failed', err);
     }
 
     chunkIdxRef.current += 1;
     statsRef.current = { intensities: [], classes: [], events: 0 };
     setChunkCount(c => c + 1);
-
-    // Restart recorder for the next 30s segment (unless we're shutting down).
-    if (!stoppingRef.current) {
-      try {
-        await recorder.prepareToRecordAsync();
-        recorder.record();
-      } catch (err) {
-        console.warn('recorder restart failed', err);
-      }
-    }
-
     chunkBusyRef.current = false;
-  }, [recorder]);
+  }, []);
 
-  // Poll the recorder's current metering value and update live UI state.
-  // In Privacy Mode, the on-device TFLite classifier is used instead of the
-  // loudness heuristic so snore detection runs without any cloud upload.
-  const pollMeter = useCallback(() => {
-    // expo-audio exposes the live audio level via getStatus().metering (dBFS).
-    // There is no `currentMetering` property on the recorder — reading it returns
-    // undefined, which would pin every reading to DB_FLOOR (silence).
-    let db = DB_FLOOR;
-    try {
-      db = recorder.getStatus().metering ?? DB_FLOOR;
-    } catch {
-      db = DB_FLOOR; // recorder mid stop/restart — treat as silence for this tick
-    }
+  // Sample the latest live level for the UI + per-tick stats. In Privacy Mode the
+  // on-device TFLite classifier replaces the loudness heuristic so detection runs
+  // without any cloud upload.
+  const sampleTick = useCallback(() => {
+    const db  = latestDbRef.current;
     const lvl = dbToIntensity(db);
 
     // Keep a rolling metering history for the on-device classifier
@@ -251,31 +256,17 @@ export default function RecordScreen({ navigation }: Props) {
 
     setIntensity(lvl);
     setSoundInfo(info);
-    animateBars(lvl);
 
     const s = statsRef.current;
     const wasSnoring = s.classes[s.classes.length - 1] === 'snoring';
     s.intensities.push(lvl);
     s.classes.push(info.cls);
     if (info.cls === 'snoring' && !wasSnoring) s.events += 1;
-  }, [recorder, animateBars]);
+  }, []);
 
-  const startRecording = async () => {
+  const startRecordingSession = async () => {
     Vibration.vibrate(30);
     try {
-      const { granted } = await AudioModule.requestRecordingPermissionsAsync();
-      if (!granted) {
-        Alert.alert(
-          'Microphone required',
-          'Please allow microphone access in your device settings to record sleep audio.'
-        );
-        return;
-      }
-
-      if (Platform.OS !== 'web') {
-        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: true });
-      }
-
       privacyModeRef.current = privacyMode;
       if (!privacyMode) {
         const res = await AnalyticsAPI.startSession();
@@ -299,25 +290,46 @@ export default function RecordScreen({ navigation }: Props) {
       } else {
         sessionIdRef.current = null; // local-only session
       }
-      chunkIdxRef.current    = 0;
-      chunkTimerRef.current  = 0;
-      statsRef.current       = { intensities: [], classes: [], events: 0 };
+      chunkIdxRef.current     = 0;
+      chunkTimerRef.current   = 0;
+      statsRef.current        = { intensities: [], classes: [], events: 0 };
       meteringHistRef.current = [];
+      pcmBufRef.current       = [];
+      latestDbRef.current     = DB_FLOOR;
+      streamerRef.current.reset();
+      specRef.current?.clear();
 
       setElapsed(0);
       setChunkCount(0);
       setPhase('recording');
 
-      await recorder.prepareToRecordAsync();
-      recorder.record();
+      // One continuous PCM stream. The library runs its own Android foreground
+      // service (audioFocusStrategy 'background' + showNotification) so the OS
+      // does not kill the process during an all-night session.
+      const res = await startRecording({
+        sampleRate: SR,
+        channels: 1,
+        encoding: 'pcm_16bit',
+        interval: 100,                 // emit PCM ~10×/sec
+        keepAwake: true,
+        showNotification: true,
+        notification: {
+          title: 'SleepSense',
+          text: 'Recording your sleep…',
+          android: { channelId: 'sleepsense-recording', channelName: 'Sleep Recording' },
+        },
+        android: { audioFocusStrategy: 'background' },
+        ios: { audioSession: { category: 'PlayAndRecord', mode: 'Measurement', categoryOptions: ['MixWithOthers', 'DefaultToSpeaker'] } },
+        output: { primary: { enabled: false } },   // streaming-only; we assemble chunks in JS
+        onAudioStream,
+      });
+      actualSampleRateRef.current = res.sampleRate ?? SR;
+      if (res.sampleRate && res.sampleRate !== SR) {
+        // The spectrogram filterbank assumes SR; a device override would shift pitch.
+        console.warn(`[RecordScreen] device gave ${res.sampleRate}Hz, pipeline assumes ${SR}Hz`);
+      }
 
-      // Android foreground service: post a persistent notification so the OS
-      // does not kill the audio process when the app moves to the background.
-      startForegroundAudioNotification().catch(err =>
-        console.warn('foreground notification start failed', err)
-      );
-
-      meterTimerRef.current = setInterval(pollMeter, METER_POLL_MS);
+      meterTimerRef.current = setInterval(sampleTick, METER_POLL_MS);
 
       tickTimerRef.current = setInterval(() => {
         setElapsed(e => e + 1);
@@ -333,12 +345,16 @@ export default function RecordScreen({ navigation }: Props) {
       wsUnsubsRef.current = [];
       if (tickTimerRef.current)  { clearInterval(tickTimerRef.current);  tickTimerRef.current  = null; }
       if (meterTimerRef.current) { clearInterval(meterTimerRef.current); meterTimerRef.current = null; }
-      Alert.alert('Error', err?.message ?? 'Could not start recording.');
+      try { await stopRecording(); } catch (_) {}
+      const msg = /permission|denied|microphone/i.test(String(err?.message ?? ''))
+        ? 'Please allow microphone access in your device settings to record sleep audio.'
+        : (err?.message ?? 'Could not start recording.');
+      Alert.alert(/permission|denied|microphone/i.test(String(err?.message ?? '')) ? 'Microphone required' : 'Error', msg);
       setPhase('idle');
     }
   };
 
-  const stopRecording = async () => {
+  const stopRecordingSession = async () => {
     Vibration.vibrate([0, 20, 60, 20]);
     stoppingRef.current = true;
     setPhase('stopping');
@@ -356,12 +372,10 @@ export default function RecordScreen({ navigation }: Props) {
       setTimeout(() => { clearInterval(check); resolve(); }, 30000); // 30 s safety cap
     });
 
-    // Upload final partial chunk (binary + stats).
-    // After flushChunk, recorder is stopped (stoppingRef prevents restart).
+    // Stop the recorder first so no more bytes stream in, then upload whatever
+    // remains in the buffer as the final partial chunk.
+    try { await stopRecording(); } catch (_) {}
     await flushChunk();
-
-    // If the recorder is still running (e.g. privacy mode), stop it now.
-    try { await recorder.stop(); } catch (_) {}
 
     // Notify ingestion-service that the session has ended (non-blocking).
     if (sid && !privacyModeRef.current) {
@@ -385,17 +399,6 @@ export default function RecordScreen({ navigation }: Props) {
       Alert.alert('Saved', 'Session ended.');
     }
 
-    if (Platform.OS !== 'web') {
-      try { await setAudioModeAsync({ allowsRecording: false }); } catch (err) {
-        console.warn('reset audio mode failed', err);
-      }
-    }
-
-    // Dismiss the foreground service notification now that recording has stopped.
-    stopForegroundAudioNotification().catch(err =>
-      console.warn('foreground notification stop failed', err)
-    );
-
     wsUnsubsRef.current.forEach(u => u());
     wsUnsubsRef.current = [];
     sleepSenseWS.disconnect();
@@ -403,6 +406,8 @@ export default function RecordScreen({ navigation }: Props) {
     chunkBusyRef.current = false;
     sessionIdRef.current = null;
     uploadTokenRef.current = null;
+    pcmBufRef.current = [];
+    specRef.current?.clear();
     setPhase('idle');
     setElapsed(0);
     setIntensity(0);
@@ -430,18 +435,14 @@ export default function RecordScreen({ navigation }: Props) {
             <>
               <Text style={styles.duration}>{fmt(elapsed)}</Text>
 
-              {/* Live waveform */}
-              <View style={styles.waveform}>
-                {bars.map((bar, i) => (
-                  <Animated.View
-                    key={i}
-                    style={[
-                      styles.bar,
-                      { height: bar, backgroundColor: soundInfo.color, opacity: 0.50 + (i % 4) * 0.12 },
-                    ]}
-                  />
-                ))}
-              </View>
+              {/* Live mel-spectrogram (x = time, y = frequency, colour = energy) */}
+              <LiveSpectrogram
+                ref={specRef}
+                nMels={MEL_DISPLAY}
+                width={SPEC_W}
+                height={SPEC_H}
+                style={styles.spec}
+              />
 
               {/* Live detection card */}
               <GlassCard variant="glass" radius={Radii.xl} padding={20} style={{ width: '100%' }} glow="violet">
@@ -516,7 +517,7 @@ export default function RecordScreen({ navigation }: Props) {
               ]}
             />
             <TouchableOpacity
-              onPress={phase === 'idle' ? startRecording : isRecording ? stopRecording : undefined}
+              onPress={phase === 'idle' ? startRecordingSession : isRecording ? stopRecordingSession : undefined}
               disabled={isStopping}
               activeOpacity={0.85}
             >
@@ -578,8 +579,7 @@ const styles = StyleSheet.create({
   container:     { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 18 },
   title:         { color: Colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
   duration:      { color: Colors.text, fontSize: 56, fontWeight: '800', letterSpacing: 1, fontVariant: ['tabular-nums'] },
-  waveform:      { flexDirection: 'row', alignItems: 'center', gap: 3, height: 64 },
-  bar:           { width: 5, borderRadius: 3 },
+  spec:          { marginVertical: 4 },
   liveLabel:     { color: Colors.textMuted, fontSize: 11, marginBottom: 10, letterSpacing: 1.4, textTransform: 'uppercase', fontWeight: '700', textAlign: 'center' },
   liveClassRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 14 },
   liveIconWrap:  { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },

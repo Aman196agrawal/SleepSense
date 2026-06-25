@@ -10,7 +10,8 @@ export const endSession = (sessionId: string, opts?: {
 
 /**
  * Upload a 30-second audio chunk (binary multipart) to the ingestion service.
- * `audioUri` is a local file URI produced by expo-audio after stopping a recording.
+ * `audioUri` is a local WAV file URI assembled in JS from the continuous PCM
+ * stream (see RecordScreen flushChunk).
  */
 export const uploadBinaryChunk = (
   sessionId: string,
@@ -22,8 +23,8 @@ export const uploadBinaryChunk = (
   const formData = new FormData();
   formData.append('audio', {
     uri: audioUri,
-    name: `chunk_${String(chunkIndex).padStart(3, '0')}.m4a`,
-    type: 'audio/m4a',
+    name: `chunk_${String(chunkIndex).padStart(3, '0')}.wav`,
+    type: 'audio/wav',
   } as any);
   formData.append('chunk_index', String(chunkIndex));
   formData.append('duration_seconds', String(durationSeconds));
