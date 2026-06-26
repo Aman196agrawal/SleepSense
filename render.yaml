@@ -1,0 +1,53 @@
+# Render Blueprint — deploys the two SleepSense backends as public Docker web services.
+# Usage: render.com -> New -> Blueprint -> connect this repo -> Apply.
+# Both services share an auto-generated SECRET_KEY (so analytics can validate auth's JWTs).
+# Free tier: services sleep after ~15 min idle (~40s cold start); SQLite in /tmp is
+# ephemeral (resets on redeploy) — fine for a shareable demo.
+
+services:
+  - type: web
+    name: sleepsense-auth
+    runtime: docker
+    repo: https://github.com/Aman196agrawal/SleepSense
+    dockerfilePath: ./services/auth-service/Dockerfile
+    dockerContext: ./services/auth-service
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - fromGroup: sleepsense-shared
+      - key: DATABASE_URL
+        value: sqlite:////tmp/auth.db
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "30"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "*"
+
+  - type: web
+    name: sleepsense-analytics
+    runtime: docker
+    repo: https://github.com/Aman196agrawal/SleepSense
+    dockerfilePath: ./services/analytics-service/Dockerfile
+    dockerContext: ./services/analytics-service
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - fromGroup: sleepsense-shared
+      - key: DATABASE_URL
+        value: sqlite:////tmp/analytics.db
+      - key: CORS_ALLOWED_ORIGINS
+        value: "*"
+
+envVarGroups:
+  - name: sleepsense-shared
+    envVars:
+      # One value generated once, shared by both services so JWTs validate across them.
+      - key: SECRET_KEY
+        generateValue: true
