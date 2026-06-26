@@ -12,3 +12,13 @@ optuna>=3.3.0
 scipy>=1.11.0
 noisereduce>=3.0.0
 imageio-ffmpeg>=0.4.9   # bundles a static ffmpeg to decode m4a/AAC recordings
+
+# Deep denoiser for the snore-cleaning feature (src/denoise.py "deep" presets).
+# IMPORTANT: install these WITHOUT deps — the versions `denoiser` pins for
+# hydra/omegaconf are 2019-era and fail to build on modern Python; they are only
+# used for training, not the inference path we use:
+#     pip install --no-deps denoiser julius
+# Runtime needs only torch + torchaudio (already required for PyTorch work) + julius.
+denoiser==0.1.5         # install via: pip install --no-deps denoiser julius
+julius>=0.2.7
+# onnxruntime  — optional, only for the DNSMOS perceptual metric in src/metrics.py
