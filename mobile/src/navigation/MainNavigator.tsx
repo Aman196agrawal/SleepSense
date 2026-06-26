@@ -8,6 +8,7 @@ import RecordScreen        from '../screens/RecordScreen';
 import HistoryScreen       from '../screens/HistoryScreen';
 import ProfileScreen       from '../screens/ProfileScreen';
 import SessionDetailScreen from '../screens/SessionDetailScreen';
+import NightTimelineScreen from '../screens/NightTimelineScreen';
 import LifestyleLogScreen  from '../screens/LifestyleLogScreen';
 import HealthProfileScreen from '../screens/HealthProfileScreen';
 import GoalsScreen        from '../screens/GoalsScreen';
@@ -25,6 +26,7 @@ export type HistoryStackParams = {
   HistoryMain:   undefined;
   SessionDetail: { sessionId: string };
   Calendar:      undefined;
+  NightTimeline: { sessionId?: string } | undefined;
 };
 
 export type ProfileStackParams = {
@@ -67,6 +69,7 @@ function HistoryStack() {
       <HistoryStackNav_.Screen name="HistoryMain"   component={HistoryScreen} />
       <HistoryStackNav_.Screen name="SessionDetail" component={SessionDetailScreen} />
       <HistoryStackNav_.Screen name="Calendar"      component={CalendarScreen} />
+      <HistoryStackNav_.Screen name="NightTimeline" component={NightTimelineScreen} />
     </HistoryStackNav_.Navigator>
   );
 }

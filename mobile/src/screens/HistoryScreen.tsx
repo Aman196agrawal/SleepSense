@@ -85,14 +85,24 @@ export default function HistoryScreen({ navigation }: Props) {
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <Text style={styles.heading}>Sleep History</Text>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Calendar')}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-            accessibilityLabel="Open Calendar view"
-          >
-            <Ionicons name="calendar-outline" size={18} color={Colors.primary} />
-            <Text style={{ color: Colors.primary, fontSize: 13, fontWeight: '600' }}>Calendar</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('NightTimeline', sessions[0] ? { sessionId: sessions[0].id } : undefined)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              accessibilityLabel="Open Snore Timeline viewer"
+            >
+              <Ionicons name="pulse-outline" size={18} color={Colors.primary} />
+              <Text style={{ color: Colors.primary, fontSize: 13, fontWeight: '600' }}>Timeline</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Calendar')}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              accessibilityLabel="Open Calendar view"
+            >
+              <Ionicons name="calendar-outline" size={18} color={Colors.primary} />
+              <Text style={{ color: Colors.primary, fontSize: 13, fontWeight: '600' }}>Calendar</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {loadError && (
