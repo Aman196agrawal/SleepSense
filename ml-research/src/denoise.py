@@ -16,9 +16,16 @@ Source m4a/AAC is decoded with the ffmpeg binary bundled by `imageio-ffmpeg`
 
 Presets
 -------
-  gentle     — light touch; safest for ML training audio (least artifacts)
-  medium     — balanced; good default for visualization
-  aggressive — maximum noise removal + gate; best for human listening
+  gentle     — classical (noisereduce); light touch; safest for ML training audio
+  medium     — classical; balanced; good default
+  aggressive — classical; maximum spectral-subtraction removal + gate
+  deep       — learned DNS denoiser (Meta `denoiser`); biggest noise drop while
+               PRESERVING the snore band, near-zero musical noise. Best quality.
+  deep_clean — `deep` + envelope gate; best for human listening / visualization
+
+The `deep` presets beat the classical ones by a wide margin on the metrics
+harness (see src/metrics.py): ~60 dB noise-floor reduction with the snore band
+left intact, vs noisereduce which erodes the snore as it cleans harder.
 """
 from __future__ import annotations
 
@@ -92,6 +99,55 @@ def spectral_denoise(y: np.ndarray, sr: int, noise_clip: np.ndarray | None,
     return nr.reduce_noise(**kwargs).astype(np.float32)
 
 
+# ── Deep-learning denoiser (Meta DNS / Demucs) ───────────────────────────────────
+
+_DL_MODEL = None     # module-level cache — the 128 MB checkpoint loads once per process
+
+
+def _load_dl_model():
+    """Lazy-load + cache Meta's pretrained DNS64 denoiser (facebook `denoiser`).
+
+    Installed without its training deps:  pip install --no-deps denoiser julius
+    (the hydra/omegaconf pins it lists are 2019-era and break on modern Python;
+    they are only needed for training, not inference). First call downloads the
+    checkpoint to the torch hub cache."""
+    global _DL_MODEL
+    if _DL_MODEL is None:
+        from denoiser.pretrained import dns64
+        m = dns64()
+        m.eval()
+        _DL_MODEL = m
+    return _DL_MODEL
+
+
+def dl_denoise(y: np.ndarray, sr: int, dry: float = 0.0) -> np.ndarray:
+    """Run a learned DNS denoiser (Demucs, 16 kHz mono).
+
+    Unlike spectral subtraction this leaves almost no musical noise and — crucially
+    for us — *preserves the snore band* while flattening the fan/AC floor (verified
+    against the metrics harness). Feed it audio WITHOUT a mains-harmonic notch: a
+    50 Hz-harmonic notch lands on the snore fundamental/harmonics and guts it.
+
+    `dry` (0-1) mixes back some of the input to soften artifacts (0 = fully wet).
+    """
+    import torch
+    model = _load_dl_model()
+    model_sr = int(getattr(model, "sample_rate", 16_000))
+    x = y
+    if sr != model_sr:
+        import librosa
+        x = librosa.resample(x, orig_sr=sr, target_sr=model_sr)
+    with torch.no_grad():
+        t = torch.from_numpy(np.ascontiguousarray(x)).float()[None, None, :]
+        est = model(t)[0, 0].cpu().numpy()
+    if dry > 0:
+        est = (1 - dry) * est + dry * x[: len(est)]
+    if sr != model_sr:
+        import librosa
+        est = librosa.resample(est, orig_sr=model_sr, target_sr=sr)
+    return est.astype(np.float32)
+
+
 def noise_gate(y: np.ndarray, sr: int, threshold_db: float = -45.0,
                attack_ms: float = 10.0, release_ms: float = 150.0,
                floor_db: float = -25.0) -> np.ndarray:
@@ -127,6 +183,8 @@ class DenoiseConfig:
     gate: bool = False
     gate_threshold_db: float = -45.0
     normalize: bool = True
+    use_dl: bool = False        # use the learned DNS denoiser instead of noisereduce
+    dl_dry: float = 0.0         # dry/wet mix for the DL stage (0 = fully denoised)
 
 
 PRESETS = {
@@ -134,6 +192,12 @@ PRESETS = {
     "medium":     DenoiseConfig(highpass_hz=65, prop_decrease=0.85, stationary=False, gate=False),
     "aggressive": DenoiseConfig(highpass_hz=70, prop_decrease=0.95, stationary=False, gate=True,
                                 gate_threshold_db=-42.0),
+    # Deep presets: learned DNS denoiser. Only a *gentle* sub-bass highpass (well
+    # below the ~80 Hz snore fundamental) and NO mains-harmonic notch — the model
+    # handles the AC/fan floor and the notch would gut the snore harmonics.
+    "deep":       DenoiseConfig(highpass_hz=40, notch=False, use_dl=True, gate=False),
+    "deep_clean": DenoiseConfig(highpass_hz=40, notch=False, use_dl=True, gate=True,
+                                gate_threshold_db=-45.0),
 }
 
 
@@ -148,9 +212,12 @@ def denoise(y: np.ndarray, sr: int = SAMPLE_RATE, preset: str | DenoiseConfig = 
     out = highpass(y, sr, cfg.highpass_hz)
     if cfg.notch:
         out = notch_mains(out, sr, cfg.notch_freq)
-    if noise_clip is not None:
-        noise_clip = highpass(noise_clip, sr, cfg.highpass_hz)
-    out = spectral_denoise(out, sr, noise_clip, cfg.stationary, cfg.prop_decrease)
+    if cfg.use_dl:
+        out = dl_denoise(out, sr, dry=cfg.dl_dry)
+    else:
+        if noise_clip is not None:
+            noise_clip = highpass(noise_clip, sr, cfg.highpass_hz)
+        out = spectral_denoise(out, sr, noise_clip, cfg.stationary, cfg.prop_decrease)
     if cfg.gate:
         out = noise_gate(out, sr, cfg.gate_threshold_db)
     if cfg.normalize:
