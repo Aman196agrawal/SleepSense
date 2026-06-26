@@ -1,0 +1,41 @@
+# SleepSense backend for a single Oracle Cloud (Always Free) ARM VM.
+# Runs auth (8001) + analytics (8002) with a SHARED SECRET_KEY (so analytics can
+# validate auth's JWTs) and PERSISTENT SQLite volumes (data survives restarts).
+#
+#   cd ~/SleepSense/deploy
+#   docker compose -f docker-compose.oracle.yml --env-file .env up -d --build
+#
+# .env must define SECRET_KEY (the setup script generates one).
+
+services:
+  auth:
+    build:
+      context: ../services/auth-service
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DATABASE_URL: sqlite:////data/auth.db
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+      REFRESH_TOKEN_EXPIRE_DAYS: "30"
+      CORS_ALLOWED_ORIGINS: "*"
+    volumes:
+      - auth-data:/data
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+  analytics:
+    build:
+      context: ../services/analytics-service
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      DATABASE_URL: sqlite:////data/analytics.db
+      CORS_ALLOWED_ORIGINS: "*"
+    volumes:
+      - analytics-data:/data
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+
+volumes:
+  auth-data:
+  analytics-data:
