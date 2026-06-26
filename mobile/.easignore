@@ -1,3 +1,14 @@
 node_modules/
-android/
 .expo/
+
+# Generated Android build artifacts. These must NOT be uploaded: locally they
+# contain Windows absolute paths (e.g. android/build/generated/autolinking/
+# autolinking.json) which EAS's Linux workers misread as broken relative paths,
+# failing every native module link ("unknown gradle error"). The worker
+# regenerates them fresh, so excluding them is correct.
+android/build/
+android/.gradle/
+android/.kotlin/
+android/app/build/
+android/app/.cxx/
+android/app/.gradle/

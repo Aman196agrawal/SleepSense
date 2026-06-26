@@ -3,3 +3,9 @@ ml-research/output/
 services/*/data/
 node_modules/
 mobile/android/build/
+mobile/android/.gradle/
+mobile/android/.kotlin/
+mobile/android/app/build/
+mobile/android/app/.cxx/
+.tunnels/
+*.log
