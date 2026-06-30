@@ -73,6 +73,35 @@ def raw_vs_clean(raw: np.ndarray, clean: np.ndarray, sr: int,
     return fig
 
 
+def draw_pcen(ax, M: np.ndarray, times: np.ndarray, freqs: np.ndarray, title: str = ""):
+    """Draw a PCEN matrix (n_mels × n_frames) onto an existing Axes. PCEN is
+    dimensionless (≈0–a few), so the colour scale auto-ranges. Returns the QuadMesh."""
+    mesh = ax.pcolormesh(times, freqs, M, shading="auto", cmap="magma")
+    ax.set_ylabel("Hz")
+    ax.set_xlabel("s")
+    if title:
+        ax.set_title(title, fontsize=10)
+    return mesh
+
+
+def logmel_vs_pcen(y: np.ndarray, sr: int, fmax: float = 2000, title: str = ""):
+    """Stacked log-mel (top) vs PCEN (bottom) for the same waveform — shows PCEN
+    flattening the stationary AC/fan floor so the snore pops. Returns a Figure."""
+    import matplotlib.pyplot as plt
+    import pcen as P
+    S_db, t0, f0 = P.logmel_spectrogram(y, sr, fmax=fmax)
+    M, t1, f1 = P.pcen_spectrogram(y, sr, fmax=fmax)
+    pre = f"{title} — " if title else ""
+    fig, ax = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
+    im0 = ax[0].pcolormesh(t0, f0, S_db, shading="auto", cmap="magma", vmin=-80, vmax=0)
+    ax[0].set_ylabel("Hz")
+    ax[0].set_title(pre + "log-mel (dB)", fontsize=10)
+    fig.colorbar(im0, ax=ax[0], pad=0.01)
+    im1 = draw_pcen(ax[1], M, t1, f1, pre + "PCEN")
+    fig.colorbar(im1, ax=ax[1], pad=0.01)
+    return fig
+
+
 def presets_grid(raw: np.ndarray, cleaned: dict[str, np.ndarray], sr: int,
                  fmax: int | None = None, mel: bool = False):
     """One spectrogram row for RAW + each preset in `cleaned` (label -> waveform).
