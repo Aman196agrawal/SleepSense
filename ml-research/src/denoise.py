@@ -257,6 +257,206 @@ def multiband_denoise(y: np.ndarray, sr: int, cfg: DenoiseConfig,
     return out.astype(np.float32)
 
 
+# ── Round-2 methods (see tests/test_denoise_methods.py) ────────────────────────
+#
+# multi_profile_denoise — fixes the known weakness of the single global noise
+#   profile: with an AC that cycles on/off, the quietest window is always an
+#   AC-off moment, so the AC-on stretches are under-subtracted. Cluster the
+#   quiet gaps into k noise states, denoise against each state's own profile,
+#   and crossfade between the results following the detected state timeline.
+#
+# mmse_lsa_denoise — Ephraim-Malah MMSE log-spectral-amplitude estimator with a
+#   decision-directed a-priori SNR. The classical successor to spectral
+#   subtraction: its recursive SNR smoothing is what suppresses musical noise.
+#
+# nmf_denoise — semi-supervised NMF separation: learn a noise dictionary from
+#   the quiet gaps, add free components for the snore, Wiener-mask with the
+#   free components' reconstruction. Separation, not subtraction.
+
+
+def _gap_frame_info(y: np.ndarray, sr: int, frame_s: float, gap_pct: float,
+                    local_s: float = 20.0):
+    """Frame the signal; return (frame_len, per-frame dB, gap-frame indices).
+
+    Gap frames are the bottom `gap_pct`% WITHIN a rolling `local_s` window, not
+    globally — with cycling noise the loud state's gaps are louder than the
+    quiet state's snores, so a global threshold would only ever sample gaps
+    from the quiet state and the loud noise state would never be profiled."""
+    from scipy.ndimage import percentile_filter
+    flen = max(1, int(sr * frame_s))
+    n = len(y) // flen
+    fr = y[: n * flen].reshape(n, flen)
+    pdb = 10 * np.log10(np.mean(fr.astype(np.float64) ** 2, axis=1) + 1e-12)
+    size = max(3, int(local_s / frame_s)) | 1
+    local_thresh = percentile_filter(pdb, percentile=gap_pct, size=size)
+    gap_idx = np.where(pdb <= local_thresh)[0]
+    if len(gap_idx) == 0:
+        gap_idx = np.where(pdb <= np.percentile(pdb, gap_pct))[0]
+    return flen, pdb, gap_idx
+
+
+def _auto_noise_frames(y: np.ndarray, sr: int, max_s: float = 6.0,
+                       frame_s: float = 0.25, gap_pct: float = 20.0) -> np.ndarray:
+    """Noise fingerprint built from concatenated short GAP FRAMES rather than
+    one contiguous window: a contiguous window as short as a breath cycle
+    inevitably swallows a snore burst, and a noise profile that contains snore
+    subtracts snore (see the NMF role-flip caught in test_denoise_methods)."""
+    flen, _, gap_idx = _gap_frame_info(y, sr, frame_s, gap_pct)
+    n_frames = len(y) // flen
+    frames = y[: n_frames * flen].reshape(n_frames, flen)
+    clip = frames[gap_idx].reshape(-1)[: int(max_s * sr)]
+    return clip if len(clip) >= flen else _auto_noise_clip(y, sr)
+
+
+def multi_profile_denoise(y: np.ndarray, sr: int, n_profiles: int = 2,
+                          prop_decrease: float = 0.9, gap_pct: float = 30.0,
+                          frame_s: float = 0.5, xfade_s: float = 0.5,
+                          max_clip_s: float = 10.0) -> np.ndarray:
+    """Spectral subtraction with k noise profiles clustered from the quiet gaps.
+
+    n_profiles=1 reproduces the old single-global-profile behavior (baseline)."""
+    import noisereduce as nr
+
+    flen, _, gap_idx = _gap_frame_info(y, sr, frame_s, gap_pct)
+    n_frames = len(y) // flen
+    frames = y[: n_frames * flen].reshape(n_frames, flen)
+
+    if n_profiles <= 1 or len(gap_idx) < 2 * n_profiles:
+        states = np.zeros(len(gap_idx), dtype=int)
+        pure = np.ones(len(gap_idx), dtype=bool)
+        n_profiles = 1
+    else:
+        # Cluster gap frames by their band-energy spectrum (log, z-scored).
+        mag2 = np.abs(np.fft.rfft(frames[gap_idx] * np.hanning(flen), axis=1)) ** 2
+        n_bands = 24
+        bands = np.array_split(mag2, n_bands, axis=1)
+        feat = np.log10(np.stack([b.mean(axis=1) for b in bands], axis=1) + 1e-12)
+        feat = (feat - feat.mean(axis=0)) / (feat.std(axis=0) + 1e-9)
+        from sklearn.cluster import KMeans
+        km = KMeans(n_clusters=n_profiles, n_init=10, random_state=0).fit(feat)
+        states = km.labels_
+        # Gap frames aren't perfectly noise-only (snore tails leak in) — build
+        # each profile only from the half of its cluster nearest the centroid,
+        # so one mis-clustered snore-y frame can't put snore into a profile.
+        dist = np.linalg.norm(feat - km.cluster_centers_[states], axis=1)
+        pure = np.zeros(len(states), dtype=bool)
+        for k in range(n_profiles):
+            m = states == k
+            pure[m] = dist[m] <= np.median(dist[m])
+
+    # Noise state per frame: nearest-in-time gap frame's state, median-smoothed
+    # (noise states are piecewise-constant over long stretches; isolated
+    # mis-assigned gap frames must not flip the timeline back and forth).
+    frame_state = states[np.abs(gap_idx[None, :] - np.arange(n_frames)[:, None]).argmin(axis=1)]
+    if n_profiles > 1:
+        from scipy.ndimage import median_filter
+        frame_state = median_filter(frame_state, size=max(3, int(10.0 / frame_s)) | 1)
+
+    max_clip = int(max_clip_s * sr)
+    cleaned = []
+    for k in range(n_profiles):
+        sel = gap_idx[(states == k) & pure]
+        if len(sel) == 0:
+            sel = gap_idx[states == k]
+        clip = frames[sel].reshape(-1)[:max_clip]
+        cleaned.append(nr.reduce_noise(y=y, sr=sr, stationary=True, y_noise=clip,
+                                       prop_decrease=prop_decrease).astype(np.float32))
+    if n_profiles == 1:
+        return cleaned[0][: len(y)]
+
+    # Per-sample state weights, smoothed for a click-free crossfade at switches.
+    sample_state = np.repeat(frame_state, flen)
+    sample_state = np.pad(sample_state, (0, len(y) - len(sample_state)), mode="edge")
+    win = max(1, int(sr * xfade_s))
+    kern = np.ones(win) / win
+    weights = np.stack([np.convolve((sample_state == k).astype(np.float32), kern,
+                                    mode="same") for k in range(n_profiles)])
+    weights /= weights.sum(axis=0, keepdims=True) + 1e-9
+    out = sum(w * c[: len(y)] for w, c in zip(weights, cleaned))
+    return out.astype(np.float32)
+
+
+def mmse_lsa_denoise(y: np.ndarray, sr: int, noise_clip: np.ndarray | None = None,
+                     n_fft: int = 1024, hop: int = 256, alpha: float = 0.98,
+                     gain_floor: float = 0.05) -> np.ndarray:
+    """Ephraim-Malah (1985) MMSE log-spectral-amplitude denoiser.
+
+    `alpha` is the decision-directed smoothing of the a-priori SNR — the
+    mechanism that kills musical noise relative to plain spectral subtraction."""
+    from scipy.special import exp1
+
+    nc = noise_clip if noise_clip is not None else _auto_noise_frames(y, sr)
+    _, _, N = signal.stft(nc, fs=sr, nperseg=n_fft, noverlap=n_fft - hop)
+    lam = np.maximum(np.mean(np.abs(N) ** 2, axis=1), 1e-12)  # noise PSD per bin
+
+    _, _, Y = signal.stft(y, fs=sr, nperseg=n_fft, noverlap=n_fft - hop)
+    mag2 = np.abs(Y) ** 2
+    G = np.empty_like(mag2)
+    A2_prev = mag2[:, 0]  # previous frame's cleaned amplitude²
+    for i in range(mag2.shape[1]):
+        gamma = np.minimum(mag2[:, i] / lam, 1000.0)          # a-posteriori SNR
+        xi = alpha * A2_prev / lam + (1 - alpha) * np.maximum(gamma - 1.0, 0.0)
+        xi = np.maximum(xi, 1e-4)
+        v = np.maximum(xi * gamma / (1.0 + xi), 1e-8)
+        g = (xi / (1.0 + xi)) * np.exp(0.5 * exp1(v))
+        G[:, i] = np.clip(g, gain_floor, 1.0)
+        A2_prev = (G[:, i] ** 2) * mag2[:, i]
+    _, out = signal.istft(Y * G, fs=sr, nperseg=n_fft, noverlap=n_fft - hop)
+
+    out = out[: len(y)]
+    if len(out) < len(y):
+        out = np.pad(out, (0, len(y) - len(out)))
+    return out.astype(np.float32)
+
+
+def nmf_denoise(y: np.ndarray, sr: int, noise_clip: np.ndarray | None = None,
+                n_noise: int = 8, n_free: int = 8, n_iter: int = 80,
+                n_fft: int = 1024, hop: int = 256) -> np.ndarray:
+    """Semi-supervised NMF separation.
+
+    A noise dictionary W_n is learned on the (auto-detected or supplied) quiet
+    gaps and FROZEN; n_free extra components are free to model the snore. The
+    snore estimate is a Wiener mask built from the free components only."""
+    from sklearn.decomposition import NMF
+
+    rng = np.random.default_rng(0)
+    eps = 1e-9
+
+    nc = noise_clip if noise_clip is not None else _auto_noise_frames(y, sr)
+    _, _, N = signal.stft(nc, fs=sr, nperseg=n_fft, noverlap=n_fft - hop)
+    Vn = np.abs(N)
+    W_n = NMF(n_components=n_noise, init="nndsvda", max_iter=400,
+              beta_loss="kullback-leibler", solver="mu",
+              random_state=0).fit(Vn.T).components_.T          # (bins, n_noise)
+    W_n /= W_n.sum(axis=0, keepdims=True) + eps
+
+    _, _, Y = signal.stft(y, fs=sr, nperseg=n_fft, noverlap=n_fft - hop)
+    V = np.abs(Y)
+    n_bins, n_frames = V.shape
+    W = np.hstack([W_n, rng.random((n_bins, n_free)) + eps])
+    H = rng.random((n_noise + n_free, n_frames)) + eps
+
+    # KL multiplicative updates (the standard divergence for magnitude
+    # spectrograms); only the free columns of W move — the noise dict is frozen.
+    ones = np.ones_like(V)
+    for _ in range(n_iter):
+        R = V / (W @ H + eps)
+        H *= (W.T @ R) / (W.T @ ones + eps)
+        R = V / (W @ H + eps)
+        W[:, n_noise:] *= (R @ H[n_noise:].T) / (ones @ H[n_noise:].T + eps)
+        W[:, n_noise:] /= W[:, n_noise:].sum(axis=0, keepdims=True) + eps
+
+    # Power-domain Wiener mask from the two reconstructions.
+    S2 = (W[:, n_noise:] @ H[n_noise:]) ** 2
+    N2 = (W[:, :n_noise] @ H[:n_noise]) ** 2
+    mask = S2 / (S2 + N2 + eps)
+    _, out = signal.istft(Y * mask, fs=sr, nperseg=n_fft, noverlap=n_fft - hop)
+    out = out[: len(y)]
+    if len(out) < len(y):
+        out = np.pad(out, (0, len(y) - len(out)))
+    return out.astype(np.float32)
+
+
 def denoise(y: np.ndarray, sr: int = SAMPLE_RATE, preset: str | DenoiseConfig = "gentle",
             noise_clip: np.ndarray | None = None) -> np.ndarray:
     """Run the full cleaning chain. Returns a float32 waveform at `sr`.

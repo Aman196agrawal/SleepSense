@@ -221,6 +221,26 @@ def metrics_table(variants: dict[str, np.ndarray], sr: int = SAMPLE_RATE,
     return "\n".join(lines)
 
 
+# ── Reference-based metric (synthetic scenes only — real nights have no clean) ─
+
+def si_sdr(reference: np.ndarray, estimate: np.ndarray) -> float:
+    """Scale-invariant signal-to-distortion ratio in dB (higher = better).
+
+    The standard source-separation metric: projects `estimate` onto `reference`
+    so a pure gain change scores identically, then measures residual distortion.
+    Only usable where a clean reference exists (synthetic mixtures) — which is
+    exactly why we build synthetic scenes."""
+    n = min(len(reference), len(estimate))
+    r = reference[:n].astype(np.float64)
+    e = estimate[:n].astype(np.float64)
+    r = r - r.mean()
+    e = e - e.mean()
+    s_target = (np.dot(e, r) / (np.dot(r, r) + 1e-12)) * r
+    noise = e - s_target
+    return float(10 * np.log10((np.sum(s_target ** 2) + 1e-12) /
+                               (np.sum(noise ** 2) + 1e-12)))
+
+
 # ── Synthetic test signal (validates the harness with no real recording) ───────
 
 def synthetic_snore_scene(seconds: float = 30.0, sr: int = SAMPLE_RATE,
@@ -249,3 +269,36 @@ def synthetic_snore_scene(seconds: float = 30.0, sr: int = SAMPLE_RATE,
     noisy = (snore + ac_rumble + mains + fan).astype(np.float32)
     clean = snore.astype(np.float32)
     return noisy, clean
+
+
+def synthetic_cycling_scene(seconds: float = 60.0, sr: int = SAMPLE_RATE,
+                            seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """Two-state noise scene modelling the real failure mode: the AC CYCLES.
+
+    Fan hiss + mains hum run all night; the AC (sub-bass rumble + band-limited
+    100-600 Hz compressor noise) is ON for the first half only. A single
+    quietest-window noise profile is measured in the AC-off half, so it
+    under-subtracts the AC-on half — the case multi-profile denoising fixes.
+
+    Returns (noisy, clean_snore_only).
+    """
+    rng = np.random.default_rng(seed)
+    n = int(seconds * sr)
+    t = np.arange(n) / sr
+
+    breath = np.clip(np.sin(2 * np.pi * 0.25 * t), 0, None) ** 2
+    snore = sum((1.0 / k) * np.sin(2 * np.pi * 100 * k * t) for k in range(1, 8))
+    snore = (snore / np.max(np.abs(snore))) * breath * 0.6
+
+    fan = 0.04 * rng.standard_normal(n)
+    mains = 0.05 * np.sin(2 * np.pi * 50 * t)
+
+    # AC on in the first half only: rumble + band-limited compressor noise.
+    ac_on = (t < seconds / 2).astype(np.float32)
+    rumble = 0.25 * np.sin(2 * np.pi * 30 * t)
+    sos = signal.butter(4, [100, 600], btype="bandpass", fs=sr, output="sos")
+    compressor = signal.sosfilt(sos, rng.standard_normal(n)) * 0.12
+    ac = (rumble + compressor) * ac_on
+
+    noisy = (snore + fan + mains + ac).astype(np.float32)
+    return noisy, snore.astype(np.float32)
