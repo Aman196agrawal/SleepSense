@@ -1,6 +1,7 @@
 data/
 models/
 output/
+output_smoke/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
