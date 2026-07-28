@@ -20,6 +20,19 @@ export const FMIN      = 50;
 export const FMAX      = 8_000;
 export const MEL_DISPLAY = 64;   // mel bins for the live view (cheap to render)
 
+/**
+ * Display dynamic range, in dBFS, for the live spectrogram.
+ *
+ * These are ABSOLUTE references, not per-column ones. An earlier version
+ * normalised every column against its own peak, which meant each column's
+ * loudest bin always mapped to 1.0 — so digital silence rendered as a solid
+ * max-brightness block, and a whisper was pixel-identical to a shout. The
+ * spectrum is scaled so a full-scale sinusoid reads ~0 dBFS (see `column`),
+ * which makes these thresholds meaningful across columns.
+ */
+export const SPEC_DB_FLOOR = -80;   // → 0.0 (black)
+export const SPEC_DB_CEIL  = 0;     // → 1.0 (full brightness)
+
 // ── base64 → PCM ────────────────────────────────────────────────────────────────
 const _B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const _B64_LOOKUP = (() => {
@@ -111,15 +124,28 @@ export class MelSpectrogramStreamer {
   private readonly fftInput: Float32Array;
   private readonly fftOutput: Float32Array;   // complex interleaved, length 2*N_FFT
   private tail = new Float32Array(0);
-  private readonly topDb = 80;
+  /** One-sided amplitude normalisation: makes a full-scale sinusoid read ~0 dBFS. */
+  private readonly ampNorm: number;
+  readonly sampleRate: number;
 
-  constructor(nMels: number = MEL_DISPLAY) {
+  /**
+   * @param nMels      mel bins per column
+   * @param sampleRate rate of the incoming PCM. Android frequently ignores the
+   *   requested 16 kHz and hands back 44.1/48 kHz; the filterbank must be built
+   *   for the rate actually delivered or every tone lands in the wrong mel bin.
+   */
+  constructor(nMels: number = MEL_DISPLAY, sampleRate: number = SR) {
     this.nMels = nMels;
+    this.sampleRate = sampleRate;
     this.fft = new FFT(N_FFT);
     this.win = hannWindow(N_FFT);
-    this.filters = buildMelFilterbank(nMels, N_FFT, SR, FMIN, FMAX);
+    this.filters = buildMelFilterbank(nMels, N_FFT, sampleRate, FMIN,
+                                      Math.min(FMAX, sampleRate / 2));
     this.fftInput = new Float32Array(N_FFT);
     this.fftOutput = this.fft.createComplexArray() as unknown as Float32Array;
+    let winSum = 0;
+    for (let i = 0; i < N_FFT; i++) winSum += this.win[i];
+    this.ampNorm = 2 / winSum;   // coherent gain of the window, one-sided
   }
 
   /** Feed PCM samples; returns however many mel columns are now complete. */
@@ -154,22 +180,22 @@ export class MelSpectrogramStreamer {
     const power = new Float32Array(nBins);
     for (let k = 0; k < nBins; k++) {
       const re = this.fftOutput[2 * k], im = this.fftOutput[2 * k + 1];
-      power[k] = re * re + im * im;
+      // Scale to signal amplitude so the dB values below are true dBFS.
+      const mag = Math.sqrt(re * re + im * im) * this.ampNorm;
+      power[k] = mag * mag;
     }
 
+    // Map each bin against the ABSOLUTE [SPEC_DB_FLOOR, SPEC_DB_CEIL] window.
+    // Deliberately not relative to this column's own peak: that would make
+    // silence as bright as a snore (see the constants' doc comment).
+    const span = SPEC_DB_CEIL - SPEC_DB_FLOOR;
     const out = new Float32Array(this.nMels);
-    let maxDb = -Infinity;
     for (let m = 0; m < this.nMels; m++) {
       const f = this.filters[m];
       let e = 0;
       for (let k = 0; k < nBins; k++) e += f[k] * power[k];
-      const db = 10 * Math.log10(e + 1e-10);
-      out[m] = db;
-      if (db > maxDb) maxDb = db;
-    }
-    // normalize to [0,1] over a fixed topDb range below the per-column max
-    for (let m = 0; m < this.nMels; m++) {
-      out[m] = Math.max(0, Math.min(1, (out[m] - (maxDb - this.topDb)) / this.topDb));
+      const db = 10 * Math.log10(e + 1e-12);
+      out[m] = Math.max(0, Math.min(1, (db - SPEC_DB_FLOOR) / span));
     }
     return out;
   }

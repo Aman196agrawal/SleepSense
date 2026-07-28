@@ -337,9 +337,13 @@ export default function RecordScreen({ navigation }: Props) {
         onAudioStream,
       });
       actualSampleRateRef.current = res.sampleRate ?? SR;
-      if (res.sampleRate && res.sampleRate !== SR) {
-        // The spectrogram filterbank assumes SR; a device override would shift pitch.
-        console.warn(`[RecordScreen] device gave ${res.sampleRate}Hz, pipeline assumes ${SR}Hz`);
+      if (res.sampleRate && res.sampleRate !== streamerRef.current.sampleRate) {
+        // Android often ignores the requested rate. Rebuild the filterbank for
+        // the rate actually delivered — otherwise every tone lands in the wrong
+        // mel bin and the spectrogram reads as the wrong pitch.
+        console.warn(`[RecordScreen] device gave ${res.sampleRate}Hz, rebuilding mel filterbank (requested ${SR}Hz)`);
+        streamerRef.current = new MelSpectrogramStreamer(MEL_DISPLAY, res.sampleRate);
+        specRef.current?.clear();
       }
 
       meterTimerRef.current = setInterval(sampleTick, METER_POLL_MS);

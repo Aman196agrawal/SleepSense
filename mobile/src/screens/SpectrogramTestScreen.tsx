@@ -23,9 +23,10 @@ const SPEC_H = 220;
 
 export default function SpectrogramTestScreen() {
   const { startRecording, stopRecording, isRecording } = useAudioRecorder();
-  const streamerRef = useRef(new MelSpectrogramStreamer(MEL_DISPLAY));
+  const streamerRef = useRef(new MelSpectrogramStreamer(MEL_DISPLAY, SR));
   const specRef = useRef<LiveSpectrogramHandle>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [rate, setRate] = useState<number>(SR);
 
   const onAudioStream = useCallback(async (event: AudioDataEvent) => {
     try {
@@ -45,7 +46,7 @@ export default function SpectrogramTestScreen() {
     streamerRef.current.reset();
     specRef.current?.clear();
     try {
-      await startRecording({
+      const res = await startRecording({
         sampleRate: SR,
         channels: 1,
         encoding: 'pcm_16bit',
@@ -55,6 +56,13 @@ export default function SpectrogramTestScreen() {
         // streaming-only for the test (no file needed yet)
         output: { primary: { enabled: false } },
       });
+      // Android often ignores the requested rate. Rebuild the filterbank for
+      // whatever we actually got, or every tone lands in the wrong mel bin.
+      const actual = res?.sampleRate ?? SR;
+      setRate(actual);
+      if (actual !== streamerRef.current.sampleRate) {
+        streamerRef.current = new MelSpectrogramStreamer(MEL_DISPLAY, actual);
+      }
     } catch (e: any) {
       setErr(String(e?.message ?? e));
     }
@@ -69,6 +77,10 @@ export default function SpectrogramTestScreen() {
       <Text style={styles.title}>Live Spectrogram — pipeline test</Text>
       <Text style={styles.sub}>
         Tap Start and hum/snore. Energy should light up the low-mid bands.
+      </Text>
+      <Text style={styles.meta}>
+        {isRecording ? `recording @ ${rate} Hz` : 'idle'}
+        {rate !== SR ? `  (device overrode ${SR} Hz)` : ''}
       </Text>
 
       <LiveSpectrogram
@@ -95,6 +107,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0B0B14', alignItems: 'center', paddingTop: 24, gap: 16 },
   title: { color: '#fff', fontSize: 18, fontWeight: '700' },
   sub: { color: '#9aa', fontSize: 13, paddingHorizontal: 24, textAlign: 'center' },
+  meta: { color: '#667', fontSize: 11, textAlign: 'center' },
   spec: { marginTop: 8 },
   btn: { paddingVertical: 14, paddingHorizontal: 48, borderRadius: 28, marginTop: 12 },
   start: { backgroundColor: '#A78BFA' },
