@@ -13,9 +13,15 @@ import React, { useCallback, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAudioRecorder, type AudioDataEvent } from '@siteed/expo-audio-studio';
+import { Asset } from 'expo-asset';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import { LiveSpectrogram, type LiveSpectrogramHandle } from '../components/LiveSpectrogram';
-import { MelSpectrogramStreamer, pcm16Base64ToFloat32, MEL_DISPLAY, SR } from '../ml/spectrogram';
+import {
+  MelSpectrogramStreamer, pcm16Base64ToFloat32, base64ToBytes, pcm16BytesToFloat32,
+  MEL_DISPLAY, SR,
+} from '../ml/spectrogram';
+import { parseWavPcm16 } from '../ml/wav';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const SPEC_W = Math.round(SCREEN_W - 32);
@@ -27,6 +33,8 @@ export default function SpectrogramTestScreen() {
   const specRef = useRef<LiveSpectrogramHandle>(null);
   const [err, setErr] = useState<string | null>(null);
   const [rate, setRate] = useState<number>(SR);
+  const [playing, setPlaying] = useState(false);
+  const cancelRef = useRef(false);
 
   const onAudioStream = useCallback(async (event: AudioDataEvent) => {
     try {
@@ -72,6 +80,42 @@ export default function SpectrogramTestScreen() {
     try { await stopRecording(); } catch (e: any) { setErr(String(e?.message ?? e)); }
   }, [stopRecording]);
 
+  /**
+   * Replay a bundled snore clip through the SAME streamer the mic feeds, in
+   * 100ms blocks paced in real time — identical to what onAudioStream delivers.
+   * Lets the visualisation be demoed without a microphone (the emulator's
+   * virtual mic records silence) and gives a repeatable result.
+   */
+  const playSample = useCallback(async () => {
+    if (isRecording || playing) return;
+    setErr(null);
+    setPlaying(true);
+    cancelRef.current = false;
+    try {
+      const asset = Asset.fromModule(require('../../assets/audio/snore-sample.wav'));
+      await asset.downloadAsync();
+      const uri = asset.localUri ?? asset.uri;
+      const b64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      const { data, sampleRate } = parseWavPcm16(base64ToBytes(b64));
+      const pcm = pcm16BytesToFloat32(data);
+
+      setRate(sampleRate);
+      streamerRef.current = new MelSpectrogramStreamer(MEL_DISPLAY, sampleRate);
+      specRef.current?.clear();
+
+      const block = Math.max(1, Math.round(sampleRate / 10));   // 100ms
+      for (let i = 0; i < pcm.length && !cancelRef.current; i += block) {
+        const cols = streamerRef.current.push(pcm.subarray(i, Math.min(i + block, pcm.length)));
+        if (cols.length) specRef.current?.pushColumns(cols);
+        await new Promise(r => setTimeout(r, 100));
+      }
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally {
+      setPlaying(false);
+    }
+  }, [isRecording, playing]);
+
   return (
     <SafeAreaView style={styles.root}>
       <Text style={styles.title}>Live Spectrogram — pipeline test</Text>
@@ -92,10 +136,22 @@ export default function SpectrogramTestScreen() {
       />
 
       <TouchableOpacity
-        style={[styles.btn, isRecording ? styles.stop : styles.start]}
+        style={[styles.btn, isRecording ? styles.stop : styles.start,
+                playing && styles.disabled]}
         onPress={isRecording ? stop : start}
+        disabled={playing}
       >
         <Text style={styles.btnText}>{isRecording ? 'Stop' : 'Start'}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.btn, styles.sample, (isRecording || playing) && styles.disabled]}
+        onPress={playing ? () => { cancelRef.current = true; } : playSample}
+        disabled={isRecording}
+      >
+        <Text style={styles.btnText}>
+          {playing ? 'Stop sample' : 'Play sample'}
+        </Text>
       </TouchableOpacity>
 
       {err && <Text style={styles.err}>{err}</Text>}
@@ -112,6 +168,8 @@ const styles = StyleSheet.create({
   btn: { paddingVertical: 14, paddingHorizontal: 48, borderRadius: 28, marginTop: 12 },
   start: { backgroundColor: '#A78BFA' },
   stop: { backgroundColor: '#EF4444' },
+  sample: { backgroundColor: '#2F3350' },
+  disabled: { opacity: 0.4 },
   btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   err: { color: '#EF4444', fontSize: 12, paddingHorizontal: 24, textAlign: 'center' },
 });

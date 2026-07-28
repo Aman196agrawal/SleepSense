@@ -62,6 +62,52 @@ export function wavHeader(dataLen: number, sampleRate: number, channels: number,
 }
 
 /**
+ * Parse a PCM16 WAV container into its raw audio bytes.
+ *
+ * Walks the RIFF chunk list rather than assuming the canonical 44-byte header —
+ * encoders routinely insert LIST/fact chunks before `data`, and a fixed offset
+ * would slice audio at the wrong place (which sounds like a burst of noise).
+ * Only PCM16 is supported; anything else throws rather than silently
+ * mis-decoding.
+ */
+export function parseWavPcm16(bytes: Uint8Array): {
+  data: Uint8Array; sampleRate: number; channels: number;
+} {
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const ascii = (off: number, len: number) => {
+    let s = '';
+    for (let i = 0; i < len; i++) s += String.fromCharCode(v.getUint8(off + i));
+    return s;
+  };
+  if (bytes.length < 12 || ascii(0, 4) !== 'RIFF' || ascii(8, 4) !== 'WAVE') {
+    throw new Error('Not a RIFF/WAVE file');
+  }
+
+  let sampleRate = 0, channels = 0, bitDepth = 0;
+  let dataOff = -1, dataLen = 0;
+
+  let pos = 12;
+  while (pos + 8 <= bytes.length) {
+    const id = ascii(pos, 4);
+    const size = v.getUint32(pos + 4, true);
+    const body = pos + 8;
+    if (id === 'fmt ') {
+      channels   = v.getUint16(body + 2, true);
+      sampleRate = v.getUint32(body + 4, true);
+      bitDepth   = v.getUint16(body + 14, true);
+    } else if (id === 'data') {
+      dataOff = body;
+      dataLen = Math.min(size, bytes.length - body);  // tolerate truncated files
+    }
+    pos = body + size + (size & 1);                   // chunks are word-aligned
+  }
+
+  if (dataOff < 0) throw new Error('WAV has no data chunk');
+  if (bitDepth !== 16) throw new Error(`Expected PCM16, got ${bitDepth}-bit`);
+  return { data: bytes.subarray(dataOff, dataOff + dataLen), sampleRate, channels };
+}
+
+/**
  * Wrap raw little-endian PCM byte chunks in a WAV container and return it as a
  * base64 string (ready for FileSystem.writeAsStringAsync with Base64 encoding).
  */
