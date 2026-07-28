@@ -59,6 +59,9 @@ services/*/data/*.db
 services/*/data/*.db-journal
 services/*/data/*.db-wal
 services/*/data/*.db-shm
+# Timestamped backups of the same DBs — same sensitive contents, so ignore too
+services/*/data/*.bak_*
+services/*/data/*.db.bak*
 
 # ML artifacts — trained weights are not committed (use EAS secrets / S3 for the real model)
 *.pt
@@ -72,3 +75,14 @@ mlruns/
 # Screenshots (large binary, optional — remove line to include)
 # mobile/screenshots/
 /tools/
+
+# Personal sleep/snore audio captures — private data, hundreds of MB
+Recordings/
+
+# Built APKs (regenerate with build_apk_release.bat) and build diagnostics
+*.apk
+eas_phase.ndjson
+gradle_diag.bat
+
+# Local demo/preview scratch output — not referenced by the app or docs
+mobile/demo/
