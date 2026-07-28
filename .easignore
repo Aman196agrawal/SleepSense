@@ -1,11 +1,33 @@
-ml-research/data/
-ml-research/output/
-services/*/data/
+# EAS archives from the git root, so exclude everything that isn't the mobile
+# app. The ml-research tree (ESC-50 dataset, spectrogram caches, trained models,
+# denoised WAVs) is multiple GB and irrelevant to the Android build — including
+# it made the upload tarball 654 MB and the upload kept dropping (ECONNRESET).
+
+# --- Non-mobile parts of the repo (not needed to build the app) ---
+ml-research/
+services/
+docs/
+demo/
+
+# --- Large/binary artifacts anywhere (the bundled *.tflite model is KEPT) ---
+*.apk
+*.aab
+*.wav
+*.m4a
+*.keras
+*.tflite.bak
+*.ndjson
+*.log
+
+# --- Node / Expo ---
 node_modules/
+.expo/
+.tunnels/
+
+# --- Generated Android build artifacts (Windows abs paths break EAS's Linux
+# workers; the worker regenerates them). ---
 mobile/android/build/
 mobile/android/.gradle/
 mobile/android/.kotlin/
 mobile/android/app/build/
 mobile/android/app/.cxx/
-.tunnels/
-*.log
