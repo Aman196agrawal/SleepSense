@@ -5,6 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Gradients, Radii } from '../theme';
 import AuroraBackground from '../components/AuroraBackground';
 import { useAuthStore } from '../store/authStore';
+import { apiErrorMessage } from '../api/errors';
+import {
+  validatePassword, passwordStrength, unmetRules,
+  PASSWORD_PLACEHOLDER, PASSWORD_POLICY_HINT,
+} from '../utils/password';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParams } from '../navigation/AuthNavigator';
 
@@ -12,22 +17,15 @@ type Props = { navigation: NativeStackNavigationProp<AuthStackParams, 'Register'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const pwStrength = (pw: string): { level: 0|1|2|3|4; label: string; color: string } => {
-  if (!pw) return { level: 0, label: '', color: Colors.border };
-  let score = 0;
-  if (pw.length >= 8)            score++;
-  if (/[A-Z]/.test(pw))         score++;
-  if (/[0-9]/.test(pw))         score++;
-  if (/[^A-Za-z0-9]/.test(pw)) score++;
-  const map = [
-    { label: 'Too short', color: Colors.danger },
-    { label: 'Weak',      color: Colors.danger },
-    { label: 'Fair',      color: Colors.amber },
-    { label: 'Good',      color: Colors.good },
-    { label: 'Strong',    color: Colors.excellent },
-  ];
-  return { level: score as 0|1|2|3|4, ...map[score] };
-};
+// Colour ramp for the 0-4 strength meter. Only level 4 clears the server's
+// policy, so nothing below it gets a "passing" colour.
+const STRENGTH_COLORS = [
+  Colors.border,
+  Colors.danger,
+  Colors.danger,
+  Colors.amber,
+  Colors.excellent,
+];
 
 export default function RegisterScreen({ navigation }: Props) {
   const [name, setName]           = useState('');
@@ -43,7 +41,9 @@ export default function RegisterScreen({ navigation }: Props) {
   const passwordRef = useRef<TextInput>(null);
   const confirmRef  = useRef<TextInput>(null);
 
-  const strength = pwStrength(password);
+  const strength = passwordStrength(password);
+  const strengthColor = STRENGTH_COLORS[strength.level];
+  const missing = unmetRules(password);
 
   const clearErr = (key: string) =>
     setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
@@ -53,8 +53,8 @@ export default function RegisterScreen({ navigation }: Props) {
     if (!name.trim())               e.name     = 'Full name is required';
     if (!email.trim())              e.email    = 'Email is required';
     else if (!EMAIL_RE.test(email)) e.email    = 'Enter a valid email address';
-    if (!password)                  e.password = 'Password is required';
-    else if (password.length < 6)   e.password = 'At least 6 characters required';
+    const pwError = validatePassword(password);
+    if (pwError)                    e.password = pwError;
     if (!confirm)                   e.confirm  = 'Please confirm your password';
     else if (confirm !== password)  e.confirm  = 'Passwords do not match';
     setErrors(e);
@@ -68,7 +68,7 @@ export default function RegisterScreen({ navigation }: Props) {
     try {
       await register(email.trim().toLowerCase(), password, name.trim());
     } catch (e: any) {
-      setErrors({ form: e?.response?.data?.detail ?? 'Something went wrong' });
+      setErrors({ form: apiErrorMessage(e) });
     } finally {
       setLoading(false);
     }
@@ -126,7 +126,7 @@ export default function RegisterScreen({ navigation }: Props) {
             <View style={[styles.inputWrap, errors.password && styles.inputError]}>
               <Ionicons name="lock-closed-outline" size={18} color={errors.password ? Colors.danger : Colors.textMuted} />
               <TextInput
-                style={styles.input} placeholder="Min. 6 characters" placeholderTextColor={Colors.textMuted}
+                style={styles.input} placeholder={PASSWORD_PLACEHOLDER} placeholderTextColor={Colors.textMuted}
                 value={password} onChangeText={t => { setPassword(t); clearErr('password'); }}
                 secureTextEntry={!showPw}
                 ref={passwordRef}
@@ -138,15 +138,24 @@ export default function RegisterScreen({ navigation }: Props) {
                 <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={18} color={Colors.textMuted} />
               </TouchableOpacity>
             </View>
-            {password.length > 0 && (
-              <View style={styles.strengthWrap}>
-                <View style={styles.strengthBar}>
-                  {[1, 2, 3, 4].map(i => (
-                    <View key={i} style={[styles.strengthSeg, { backgroundColor: i <= strength.level ? strength.color : Colors.border }]} />
-                  ))}
+            {password.length === 0 ? (
+              <Text style={styles.strengthHint}>{PASSWORD_POLICY_HINT}</Text>
+            ) : (
+              <>
+                <View style={styles.strengthWrap}>
+                  <View style={styles.strengthBar}>
+                    {[1, 2, 3, 4].map(i => (
+                      <View key={i} style={[styles.strengthSeg, { backgroundColor: i <= strength.level ? strengthColor : Colors.border }]} />
+                    ))}
+                  </View>
+                  <Text style={[styles.strengthLabel, { color: strengthColor }]}>{strength.label}</Text>
                 </View>
-                <Text style={[styles.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
-              </View>
+                {missing.length > 0 && (
+                  <Text style={styles.strengthHint}>
+                    Still needs: {missing.map(r => r.label.toLowerCase()).join(', ')}
+                  </Text>
+                )}
+              </>
             )}
             {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
 
@@ -200,7 +209,8 @@ const styles = StyleSheet.create({
   strengthWrap:  { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   strengthBar:   { flex: 1, flexDirection: 'row', gap: 4 },
   strengthSeg:   { flex: 1, height: 4, borderRadius: 2 },
-  strengthLabel: { fontSize: 12, fontWeight: '600', minWidth: 50, textAlign: 'right' },
+  strengthLabel: { fontSize: 12, fontWeight: '600', minWidth: 84, textAlign: 'right' },
+  strengthHint:  { color: Colors.textMuted, fontSize: 11, marginTop: 6, marginLeft: 2 },
   btn:           { borderRadius: Radii.lg, overflow: 'hidden', marginTop: 24, shadowColor: '#A78BFA', shadowOpacity: 0.5, shadowRadius: 18, shadowOffset: { width: 0, height: 0 }, elevation: 10 },
   btnInner:      { paddingVertical: 15, alignItems: 'center' },
   btnText:       { color: '#fff', fontWeight: '700', fontSize: 16 },

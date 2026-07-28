@@ -10,6 +10,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { Colors, Gradients, Radii } from '../theme';
 import AuroraBackground from '../components/AuroraBackground';
 import { useAuthStore } from '../store/authStore';
+import { apiErrorMessage } from '../api/errors';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParams } from '../navigation/AuthNavigator';
 
@@ -62,8 +63,7 @@ export default function LoginScreen({ navigation }: Props) {
       setGoogleLoading(true);
       socialLoginGoogle(idToken)
         .catch((e: any) => {
-          const detail = e?.response?.data?.detail ?? 'Google sign-in failed. Please try again.';
-          setErrors({ form: detail });
+          setErrors({ form: apiErrorMessage(e, 'Google sign-in failed. Please try again.') });
         })
         .finally(() => setGoogleLoading(false));
     } else if (response.type === 'error') {
@@ -91,11 +91,10 @@ export default function LoginScreen({ navigation }: Props) {
     try {
       await login(email.trim().toLowerCase(), password);
     } catch (e: any) {
-      const detail = e?.response?.data?.detail ?? '';
       if (e?.response?.status === 429) {
         setErrors({ form: 'Too many login attempts. Please try again in 15 minutes.' });
       } else {
-        setErrors({ form: detail || 'Invalid email or password' });
+        setErrors({ form: apiErrorMessage(e, 'Invalid email or password') });
       }
     } finally {
       setLoading(false);

@@ -9,6 +9,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Colors } from '../theme';
 import type { ProfileStackParams } from '../navigation/MainNavigator';
 import * as AnalyticsAPI from '../api/analytics.api';
+import { apiErrorMessage } from '../api/errors';
 
 const GOAL_TYPES = [
   { key: 'quality_score',      label: 'Sleep Quality Score', icon: 'star-outline',    unit: 'pts', hint: 'Target 7-night avg (e.g. 80)' },
@@ -43,7 +44,7 @@ export default function GoalsScreen({ navigation }: Props) {
       setCreating(false); setNewType(null); setTargetVal('');
       load();
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.detail ?? 'Could not create goal.');
+      Alert.alert('Error', apiErrorMessage(e, 'Could not create goal.'));
     }
   };
 

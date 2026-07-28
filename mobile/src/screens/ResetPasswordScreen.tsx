@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Gradients, Radii } from '../theme';
 import AuroraBackground from '../components/AuroraBackground';
 import { useAuthStore } from '../store/authStore';
+import { apiErrorMessage } from '../api/errors';
+import { validatePassword, PASSWORD_POLICY_HINT } from '../utils/password';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParams } from '../navigation/AuthNavigator';
 
@@ -26,8 +28,10 @@ export default function ResetPasswordScreen({ navigation }: Props) {
   const validate = () => {
     const e: Record<string, string> = {};
     if (!token.trim())              e.token    = 'Paste the reset token from your email';
-    if (!password)                  e.password = 'New password is required';
-    else if (password.length < 6)   e.password = 'At least 6 characters required';
+    const pwError = validatePassword(password);
+    if (pwError)                    e.password = pwError === 'Password is required'
+                                                   ? 'New password is required'
+                                                   : pwError;
     if (confirm !== password)       e.confirm  = 'Passwords do not match';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -40,7 +44,7 @@ export default function ResetPasswordScreen({ navigation }: Props) {
       await resetPassword(token.trim(), password);
       setDone(true);
     } catch (e: any) {
-      setErrors({ form: e?.response?.data?.detail ?? 'Invalid or expired token' });
+      setErrors({ form: apiErrorMessage(e, 'Invalid or expired token') });
     } finally {
       setLoading(false);
     }
@@ -109,7 +113,7 @@ export default function ResetPasswordScreen({ navigation }: Props) {
               <TextInput
                 ref={pwRef}
                 style={styles.input}
-                placeholder="Min. 6 characters"
+                placeholder="New password"
                 placeholderTextColor={Colors.textMuted}
                 value={password}
                 onChangeText={t => { setPassword(t); setErrors(p => ({ ...p, password: '' })); }}
@@ -122,7 +126,9 @@ export default function ResetPasswordScreen({ navigation }: Props) {
                 <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={18} color={Colors.textMuted} />
               </TouchableOpacity>
             </View>
-            {errors.password && <Text style={styles.errInline}>{errors.password}</Text>}
+            {errors.password
+              ? <Text style={styles.errInline}>{errors.password}</Text>
+              : <Text style={styles.policyHint}>{PASSWORD_POLICY_HINT}</Text>}
 
             <Text style={styles.label}>Confirm New Password</Text>
             <View style={[styles.inputWrap, errors.confirm && styles.inputError]}>
@@ -170,6 +176,7 @@ const styles = StyleSheet.create({
   errBox:       { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.danger + '18', borderRadius: 10, padding: 12, marginBottom: 12 },
   errText:      { color: Colors.danger, fontSize: 13, flex: 1 },
   errInline:    { color: Colors.danger, fontSize: 12, marginTop: 4, marginLeft: 2 },
+  policyHint:   { color: Colors.textMuted, fontSize: 11, marginTop: 6, marginLeft: 2 },
   label:        { color: Colors.textSub, fontSize: 13, marginBottom: 6, marginTop: 16 },
   inputWrap:    { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(11,11,31,0.6)', borderRadius: Radii.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 14, paddingVertical: 12, gap: 10 },
   inputError:   { borderColor: Colors.danger },

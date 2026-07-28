@@ -63,9 +63,9 @@
       ]
     ],
     "extra": {
-      "authUrl": "http://192.168.1.15:8001",
-      "analyticsUrl": "http://192.168.1.15:8002",
-      "ingestionUrl": "https://realm-spiritual-screenshots-immunology.trycloudflare.com",
+      "authUrl": "http://192.168.89.230:8001",
+      "analyticsUrl": "http://192.168.89.230:8002",
+      "ingestionUrl": "http://192.168.89.230:8003",
       "eas": {
         "projectId": "3199a274-0b2d-4ba3-ac49-cf0b6f81d30f"
       }
