@@ -113,7 +113,13 @@ def logmel_vs_pcen(y: np.ndarray, sr: int, fmax: float = 2000, title: str = ""):
     """Stacked log-mel (top) vs PCEN (bottom) for the same waveform — shows PCEN
     flattening the stationary AC/fan floor so the snore pops. Returns a Figure."""
     import matplotlib.pyplot as plt
-    import pcen as P
+    # Works under both import styles in use: `from src import visualize` (the
+    # notebook, repo root on sys.path) needs the relative form, while
+    # `import visualize` (render_pcen.py, src/ on sys.path) needs the flat one.
+    try:
+        from . import pcen as P
+    except ImportError:
+        import pcen as P
     S_db, t0, f0 = P.logmel_spectrogram(y, sr, fmax=fmax)
     M, t1, f1 = P.pcen_spectrogram(y, sr, fmax=fmax)
     pre = f"{title} — " if title else ""
