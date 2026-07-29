@@ -559,7 +559,18 @@ def audio_chunk_url(
     if not _s.S3_BUCKET:
         raise HTTPException(status_code=404, detail="Audio playback not available in privacy mode")
 
-    s3_key = f"{user_id}/{session_id}/chunk_{chunk_index:03d}.opus"
+    # The key's extension is whatever container the client actually uploaded —
+    # ingestion derives it from the file's magic bytes, so it is .wav today (the
+    # app assembles WAV from the PCM stream) and .opus only once real Opus
+    # encoding lands. This used to hardcode .opus and would have missed every
+    # object. Probe the plausible extensions instead.
+    #
+    # Guessing is a symptom, not a design: ingestion's audio_chunks table holds
+    # the authoritative s3_key, and analytics cannot see that table. The proper
+    # fix is to serve playback URLs from ingestion. Left as-is because this whole
+    # endpoint is inert by default (S3_BUCKET defaults to "") and could not be
+    # exercised here — there is no S3 configured locally.
+    s3_key = None
     try:
         import boto3
         client = boto3.client(
@@ -569,6 +580,18 @@ def audio_chunk_url(
             aws_secret_access_key=_s.S3_SECRET_KEY or None,
             region_name=_s.S3_REGION,
         )
+        base = f"{user_id}/{session_id}/chunk_{chunk_index:03d}"
+        for ext in ("wav", "opus", "m4a", "mp3", "webm"):
+            candidate = f"{base}.{ext}"
+            try:
+                client.head_object(Bucket=_s.S3_BUCKET, Key=candidate)
+                s3_key = candidate
+                break
+            except Exception:
+                continue
+        if s3_key is None:
+            raise FileNotFoundError(f"no stored object for {base}.*")
+
         url = client.generate_presigned_url(
             "get_object",
             Params={"Bucket": _s.S3_BUCKET, "Key": s3_key},

@@ -1,8 +1,79 @@
 import logging
+import os
+import shutil
 from typing import BinaryIO
 from app.config import settings
 
 _logger = logging.getLogger(__name__)
+
+
+# ── Local-disk backend ────────────────────────────────────────────────────────
+# Selected with AUDIO_STORAGE_BACKEND=local. Stores each chunk as a real file at
+# AUDIO_STORAGE_DIR/<s3_key>, so the same key layout works with or without S3 and
+# nothing else in the service has to care which backend is active. Exists because
+# requiring Docker + MinIO purely to keep audio is a heavy dependency for local
+# dev — the same reasoning that has auth and analytics on SQLite instead of
+# Postgres here.
+
+def _use_local() -> bool:
+    return settings.AUDIO_STORAGE_BACKEND.strip().lower() == "local"
+
+
+def _local_path(s3_key: str) -> str:
+    """Resolve a key under the storage root, refusing anything that escapes it."""
+    root = os.path.abspath(settings.AUDIO_STORAGE_DIR)
+    path = os.path.abspath(os.path.join(root, s3_key))
+    if not (path == root or path.startswith(root + os.sep)):
+        raise ValueError(f"key escapes the storage root: {s3_key!r}")
+    return path
+
+
+def _local_upload(file_obj: BinaryIO, s3_key: str) -> bool:
+    try:
+        path = _local_path(s3_key)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as fh:
+            shutil.copyfileobj(file_obj, fh)
+        return True
+    except Exception as exc:
+        _logger.error("local store failed for %s: %s", s3_key, exc)
+        return False
+
+
+def _local_list(prefix: str) -> list[str]:
+    try:
+        base = _local_path(prefix)
+    except ValueError:
+        return []
+    if not os.path.isdir(base):
+        return []
+    root = os.path.abspath(settings.AUDIO_STORAGE_DIR)
+    keys = []
+    for dirpath, _dirs, files in os.walk(base):
+        for name in files:
+            full = os.path.join(dirpath, name)
+            keys.append(os.path.relpath(full, root).replace(os.sep, "/"))
+    return sorted(keys)
+
+
+def _local_delete_prefix(prefix: str) -> int:
+    keys = _local_list(prefix)
+    removed = 0
+    for k in keys:
+        try:
+            os.remove(_local_path(k))
+            removed += 1
+        except Exception as exc:
+            _logger.error("local delete failed for %s: %s", k, exc)
+    # Tidy up now-empty session/user directories.
+    try:
+        base = _local_path(prefix)
+        for dirpath, _dirs, _files in os.walk(base, topdown=False):
+            if not os.listdir(dirpath):
+                os.rmdir(dirpath)
+    except Exception:
+        pass
+    return removed
 
 
 def _client():
@@ -21,7 +92,9 @@ def _client():
 
 
 def upload_chunk(file_obj: BinaryIO, s3_key: str, content_type: str) -> bool:
-    """Upload audio bytes to S3. Returns True on success, False on any failure."""
+    """Store audio bytes. Returns True on success, False on any failure."""
+    if _use_local():
+        return _local_upload(file_obj, s3_key)
     client = _client()
     if not client:
         _logger.warning("S3 unavailable — chunk %s not stored remotely", s3_key)
@@ -40,7 +113,9 @@ def upload_chunk(file_obj: BinaryIO, s3_key: str, content_type: str) -> bool:
 
 
 def list_session_keys(user_id: str, session_id: str) -> list[str]:
-    """List all S3 keys for a session's audio chunks."""
+    """List all storage keys for a session's audio chunks."""
+    if _use_local():
+        return _local_list(f"{user_id}/{session_id}/")
     client = _client()
     if not client:
         return []
@@ -57,7 +132,11 @@ def list_session_keys(user_id: str, session_id: str) -> list[str]:
 
 
 def delete_session_audio(user_id: str, session_id: str) -> int:
-    """Delete all S3 objects for a session. Returns the number of objects deleted."""
+    """Delete all stored audio for a session. Returns the number removed."""
+    if _use_local():
+        n = _local_delete_prefix(f"{user_id}/{session_id}/")
+        _logger.info("Deleted %d local audio files for session %s", n, session_id)
+        return n
     client = _client()
     if not client:
         return 0
@@ -75,7 +154,11 @@ def delete_session_audio(user_id: str, session_id: str) -> int:
 
 
 def delete_user_audio(user_id: str) -> int:
-    """Delete all S3 audio files for a user (GDPR account deletion). Returns count deleted."""
+    """Delete all audio for a user (GDPR account deletion). Returns count deleted."""
+    if _use_local():
+        n = _local_delete_prefix(f"{user_id}/")
+        _logger.info("GDPR: deleted %d local audio files for user %s", n, user_id)
+        return n
     client = _client()
     if not client:
         return 0
@@ -96,7 +179,14 @@ def delete_user_audio(user_id: str) -> int:
 
 
 def check_connectivity() -> bool:
-    """Ping S3 by listing the bucket. Used by /ready health check."""
+    """Verify the storage backend is usable. Used by the /ready health check."""
+    if _use_local():
+        try:
+            os.makedirs(os.path.abspath(settings.AUDIO_STORAGE_DIR), exist_ok=True)
+            return os.access(os.path.abspath(settings.AUDIO_STORAGE_DIR), os.W_OK)
+        except Exception as exc:
+            _logger.error("local storage dir unusable: %s", exc)
+            return False
     client = _client()
     if not client:
         return False

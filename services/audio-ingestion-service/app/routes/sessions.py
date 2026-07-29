@@ -1,9 +1,12 @@
+import logging
 import re
 import time
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import Optional
+
+_logger = logging.getLogger(__name__)
 
 _UUID_RE = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I
@@ -28,22 +31,31 @@ ALLOWED_MIME_TYPES = {"audio/opus", "audio/wav", "audio/m4a", "audio/x-m4a", "au
 MAX_CHUNK_BYTES = settings.MAX_CHUNK_SIZE_MB * 1024 * 1024
 
 
-def _looks_like_audio(data: bytes) -> bool:
-    """Verify the uploaded bytes actually start with a known audio container
-    signature, rather than trusting the client-supplied Content-Type header."""
+def _sniff_format(data: bytes) -> str | None:
+    """Identify the audio container from its magic bytes, returning a file
+    extension, or None if it is not recognised audio.
+
+    Deliberately reads the bytes rather than the client-supplied Content-Type,
+    which is trivially spoofable. The extension is used for the storage key, so
+    getting it from the actual content is what keeps the key honest.
+    """
     if len(data) < 12:
-        return False
+        return None
     if data[:4] == b"OggS":                                   # Ogg (Opus/Vorbis)
-        return True
+        return "opus"
     if data[:4] == b"RIFF" and data[8:12] == b"WAVE":         # WAV
-        return True
+        return "wav"
     if data[4:8] == b"ftyp":                                  # MP4 / M4A
-        return True
+        return "m4a"
     if data[:3] == b"ID3" or data[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):  # MP3
-        return True
+        return "mp3"
     if data[:4] == b"\x1a\x45\xdf\xa3":                       # WebM / Matroska
-        return True
-    return False
+        return "webm"
+    return None
+
+
+def _looks_like_audio(data: bytes) -> bool:
+    return _sniff_format(data) is not None
 
 # In-memory fallback for chunk rate limiting when Redis is unavailable
 _chunk_rl: dict[str, list[float]] = {}
@@ -178,12 +190,20 @@ async def upload_chunk(
         )
 
     # Validate the actual bytes, not just the spoofable Content-Type header.
-    if not _looks_like_audio(audio_bytes):
+    audio_ext = _sniff_format(audio_bytes)
+    if audio_ext is None:
         raise HTTPException(status_code=400, detail="Uploaded data is not a recognised audio format")
 
-    # S3 upload (best-effort — never blocks the response)
-    s3_key = f"{user_id}/{session_id}/chunk_{chunk_index:03d}.opus"
-    s3_upload(BytesIO(audio_bytes), s3_key, content_type)
+    # Extension comes from the sniffed container, not a hardcoded ".opus". The
+    # mobile client currently uploads WAV (assembled from the PCM stream in
+    # RecordScreen.flushChunk), so keys used to be named .opus while holding
+    # WAV bytes — anything resolving the format from the key was misled.
+    s3_key = f"{user_id}/{session_id}/chunk_{chunk_index:03d}.{audio_ext}"
+    stored = s3_upload(BytesIO(audio_bytes), s3_key, content_type)
+    if not stored:
+        # Best-effort by design: the row is still written so the chunk is
+        # accounted for, but say so rather than logging success.
+        _logger.warning("chunk %s recorded but NOT stored — object storage unavailable", s3_key)
 
     # Persist chunk record
     chunk_id = str(uuid.uuid4())
