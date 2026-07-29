@@ -31,22 +31,32 @@ PCEN_INPUT_SCALE = float(2 ** 31)
 PCEN_TIME_CONSTANT = 0.8   # AGC smoothing; slow enough to track the AC floor, fast
                            # enough that snore bursts (~0.5-2 s) pop above it.
                            #
-                           # PROVISIONAL — tuned on a SINGLE 60 s window ("14 June
-                           # recording papa.m4a" at 3600 s), where it measures 0.767
-                           # active-vs-gap contrast against 0.519 for log-mel. That
-                           # figure reproduces exactly, but it does not generalise:
-                           # sweeping all three recordings at 1800/3600/7200/10800 s,
-                           # log-mel scores higher on 3 of the 4 windows that contain
-                           # real snore activity, and the best time_constant moves
-                           # between 0.2 and 3.0 depending on the window. The tuning
-                           # window is itself one of the least active in the corpus
-                           # (5.8 dB active-gap spread; the same file at 1800 s has
-                           # 9.1 dB and there log-mel wins, 0.572 vs 0.452).
+                           # Validated corpus-wide by sweep_pcen.py: 179 windows of
+                           # 60 s at a 5-minute stride over ~15 h (3 recordings), 62
+                           # of them with >=6 dB active-gap spread. Ranked per window
+                           # and aggregated by median rank:
                            #
-                           # So: treat 0.8 as a starting point, not a settled result.
-                           # Re-tune with the multi-window sweep in test_pcen.py — and
-                           # confirm the contrast metric itself is the right target —
-                           # before this feeds the classifier front-end.
+                           #   by contrast : 0.8 best (median 2.0, top-3 on 79%)
+                           #   by AUC      : 1.2 best (median 2.0, top-3 on 84%);
+                           #                 0.8 third (top-3 on 60%)
+                           #
+                           # 0.8 or 1.2 — the two metrics disagree only between
+                           # neighbours, and both are stable: the same pair wins at
+                           # every activity threshold from 0 to 12 dB and on all three
+                           # recordings individually. 0.8 is kept as it wins outright
+                           # on one metric and is top-3 on the other. This supersedes
+                           # the original single-window tuning, which happened to land
+                           # on the same value for much weaker reasons.
+                           #
+                           # BUT — the harder question is whether to use PCEN at all.
+                           # By the rank-AUC metric (scale- and monotone-invariant, so
+                           # PCEN's compression cannot flatter it) PCEN separates snore
+                           # from background better than plain log-mel on just 1 of 62
+                           # live windows, and 0 of 38 above 8 dB spread. `contrast`
+                           # is kinder (25/62) but it is a z-scored mean difference,
+                           # which compression does move. Treat PCEN as a visualization
+                           # that flattens the AC floor for the eye — NOT as a
+                           # demonstrated front-end improvement for the classifier.
 PCEN_GAIN = 0.98
 PCEN_BIAS = 2.0
 PCEN_POWER = 0.5
