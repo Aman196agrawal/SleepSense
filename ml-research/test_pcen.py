@@ -49,20 +49,84 @@ def test_silent_and_short():
 
 # ── Validation + tuning (needs a real recording) ─────────────────────────────────
 
+_AUDIO_EXTS = (".m4a", ".wav", ".mp3", ".opus", ".flac")
+
+
+def _candidate_sources():
+    """Paths to try, in priority order, plus any audio found in a recordings dir."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    explicit = os.environ.get("SNORE_PCEN_SRC")
+    if explicit:
+        yield explicit
+
+    roots = []
+    env_root = os.environ.get("SNORE_RECORDINGS")
+    if env_root:
+        roots.append(env_root)
+    # Recordings live outside the repo, as a sibling of the SnoreLab root — the
+    # same location notebooks/03_denoise_explore.ipynb looks in.
+    roots.append(os.path.abspath(os.path.join(here, "..", "..", "Recordings")))
+
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for name in sorted(os.listdir(root)):
+            if name.lower().endswith(_AUDIO_EXTS):
+                yield os.path.join(root, name)
+
+
+_PREFERRED_OFFSET = 3600.0   # an hour in — deep sleep, AC likely cycling
+_SLICE_SEC = 60.0
+_MIN_SEC = 10.0              # below this the contrast/sweep numbers are meaningless
+
+
+def _load_usable(src: str):
+    """Try the mid-night window, then fall back to the file start for shorter
+    recordings. Returns (waveform, note) or (None, reason)."""
+    for offset in (_PREFERRED_OFFSET, 0.0):
+        try:
+            y = D.load_slice(src, offset=offset, duration=_SLICE_SEC, sr=SR)
+        except Exception as e:                      # noqa: BLE001 - report, don't crash
+            return None, f"decode failed ({type(e).__name__}: {e})"
+        if len(y) >= _MIN_SEC * SR:
+            return y, f"{len(y) / SR:.0f}s window at offset {offset:.0f}s"
+    return None, (f"yields under {_MIN_SEC:.0f}s of audio even from the start "
+                  f"— needs a longer recording")
+
+
 def _real_slice():
-    src = os.environ.get(
-        "SNORE_PCEN_SRC",
-        r"C:/Users/BIT/OneDrive/Desktop/Nitu Chacha/Recordings/14 June recording papa.m4a")
-    if not os.path.exists(src):
-        return None
-    return D.load_slice(src, offset=3600, duration=60, sr=SR)
+    """Returns (waveform, description) or (None, list of 'path -> reason')."""
+    tried = []
+    for src in _candidate_sources():
+        if not os.path.exists(src):
+            tried.append(f"{src}  ->  not found")
+            continue
+        y, note = _load_usable(src)
+        if y is not None:
+            return y, f"{src}  ({note})"
+        tried.append(f"{src}  ->  {note}")
+    return None, tried
 
 
-def sweep_and_validate():
-    y = _real_slice()
+def sweep_and_validate() -> bool:
+    """Returns True only if the validation actually ran against real audio."""
+    y, info = _real_slice()
     if y is None:
-        print("skip validation/sweep (no real recording found)")
-        return
+        print("\n" + "!" * 76)
+        print("!! REAL-RECORDING VALIDATION DID NOT RUN — no source audio found.")
+        print("!! The time_constant sweep did not execute, so the 'PCEN beats")
+        print("!! log-mel' claim is UNVERIFIED in this environment.")
+        if info:
+            print("!! Tried:")
+            for p in info:
+                print(f"!!   {p}")
+        else:
+            print("!! No candidate paths existed to try.")
+        print("!! Point at one with:  SNORE_PCEN_SRC=/path/to/recording.m4a")
+        print("!! or a directory with: SNORE_RECORDINGS=/path/to/Recordings")
+        print("!" * 76)
+        return False
+    print(f"\nvalidating against: {info}")
     fe = P.snore_frame_energy(y, SR)                       # shared activity reference
     S_db, _, _ = P.logmel_spectrogram(y, SR)
     base = P.active_gap_contrast(S_db, frame_energy=fe)
@@ -80,11 +144,20 @@ def sweep_and_validate():
     assert best[1] > base, "PCEN should beat log-mel on snore-vs-background contrast"
     print("ok  PCEN beats log-mel contrast")
     print(f"current pcen.py default time_constant = {P.PCEN_TIME_CONSTANT}")
+    return True
 
 
 if __name__ == "__main__":
     test_shape_and_finite()
     test_deterministic()
     test_silent_and_short()
-    sweep_and_validate()
-    print("\nALL CHECKS DONE")
+    validated = sweep_and_validate()
+
+    if validated:
+        print("\nALL CHECKS DONE (unit + real-recording validation)")
+    else:
+        # Do not claim "all checks done" when the headline claim was never tested.
+        print("\nUNIT CHECKS PASSED — real-recording validation SKIPPED (see above)")
+        if os.environ.get("SNORE_PCEN_REQUIRE_REAL"):
+            print("SNORE_PCEN_REQUIRE_REAL is set — treating the skip as a failure.")
+            sys.exit(1)
