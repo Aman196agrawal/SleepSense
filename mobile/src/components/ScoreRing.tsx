@@ -51,9 +51,14 @@ export default function ScoreRing({ score, size = 180, grade, halo = true }: Pro
     return () => { if (raf) cancelAnimationFrame(raf); };
   }, [score]);
 
+  // `progress` animates 0 -> target, so the interpolation must map the full
+  // [0,1] domain onto [circumf, 0]; the offset then lands at circumf*(1-target)
+  // on its own. Baking (1 - target) into the outputRange as well applied the
+  // target twice and filled the ring to target² — a score of 50 drew a 25% arc
+  // next to the text "50", exact only at 0 and 100.
   const strokeDashoffset = progress.interpolate({
     inputRange:  [0, 1],
-    outputRange: [circumf, circumf * (1 - target) + 0.0001],
+    outputRange: [circumf, 0],
   });
 
   return (
