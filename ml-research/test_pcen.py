@@ -63,8 +63,11 @@ def _candidate_sources():
     env_root = os.environ.get("SNORE_RECORDINGS")
     if env_root:
         roots.append(env_root)
-    # Recordings live outside the repo, as a sibling of the SnoreLab root — the
-    # same location notebooks/03_denoise_explore.ipynb looks in.
+    # Where the recordings actually live: <repo>/Recordings (gitignored, so the
+    # multi-hundred-MB m4a files stay out of git).
+    roots.append(os.path.abspath(os.path.join(here, "..", "Recordings")))
+    # Also try the sibling-of-repo location that 03_denoise_explore.ipynb assumes,
+    # in case a checkout keeps them outside the tree.
     roots.append(os.path.abspath(os.path.join(here, "..", "..", "Recordings")))
 
     for root in roots:
