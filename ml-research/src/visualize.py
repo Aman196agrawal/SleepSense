@@ -148,7 +148,11 @@ def presets_grid(raw: np.ndarray, cleaned: dict[str, np.ndarray], sr: int,
     import matplotlib.pyplot as plt
     fm = fmax if fmax is not None else (_MEL_FMAX if mel else _FMAX)
     rows = 1 + len(cleaned)
-    fig, ax = plt.subplots(rows, 1, figsize=(14, 3 * rows), sharex=True)
+    # squeeze=False keeps `ax` a 2-D array even for a single row; with the default
+    # squeeze matplotlib hands back a bare Axes and `ax[0]` raises
+    # "'Axes' object is not subscriptable" whenever `cleaned` is empty.
+    fig, axes = plt.subplots(rows, 1, figsize=(14, 3 * rows), sharex=True, squeeze=False)
+    ax = axes[:, 0]
     if mel:
         # Same shared-reference rule as raw_vs_clean — every preset row is scored
         # against the RAW peak, so rows are comparable to each other.
