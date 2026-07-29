@@ -56,6 +56,69 @@ def normalise(y: np.ndarray, peak: float = 0.89) -> np.ndarray:
     return (y * (peak / m)).astype(np.float32) if m > 0 else y.astype(np.float32)
 
 
+def write_readme(outdir, stem, name, off, dur, order, lead):
+    """Explain what each file is — chiefly that ORIGINAL and BEFORE are the same
+    audio at different levels, which is otherwise easy to misread."""
+    hh, mm = int(off // 3600), int((off % 3600) // 60)
+    lines = [
+        "SleepSense — snore denoising demo",
+        "=" * 60,
+        "",
+        f"Source recording : {name}",
+        f"Window           : {hh:02d}:{mm:02d} into the night ({int(off)}s), "
+        f"{dur:.0f}s long",
+        f"Sample rate      : {SR} Hz, mono",
+        "",
+        "WHAT CLEANED THE AUDIO",
+        "-" * 60,
+        "The 'safe' preset in ml-research/src/denoise.py: a high-pass to remove",
+        "sub-snore AC rumble, then multiband stationary spectral subtraction",
+        "(noisereduce) — gentle inside the 80-1400 Hz snore band, hard outside it,",
+        "recombined. No gate, no neural model, no time-varying gain, so the snore's",
+        "amplitude envelope is never modulated and the snore cannot 'break'.",
+        "",
+        "NOTE: PCEN is NOT used to clean the audio. PCEN is a spectrogram",
+        "normalisation used for VISUALISATION (see src/pcen.py) — it flattens the",
+        "stationary AC/fan floor so the snore stands out to the eye. The denoising",
+        "here is classical spectral subtraction.",
+        "",
+        "FILES",
+        "-" * 60,
+        f"{stem}__00_ORIGINAL_unmodified.wav",
+        "    The source audio exactly as decoded. No level change. This is the",
+        "    input the cleaning was run on.",
+        "",
+    ]
+    for i, label in enumerate(order, start=1):
+        tag = "BEFORE_raw" if label == "RAW" else f"AFTER_{label}"
+        lines.append(f"{stem}__{i:02d}_{tag}.wav")
+        if label == "RAW":
+            lines.append("    Same audio as ORIGINAL, peak-matched to the cleaned")
+            lines.append("    versions. Use THIS one for A/B so a level difference")
+            lines.append("    cannot be mistaken for a cleaning difference.")
+        elif label == lead:
+            lines.append("    *** PLAY THIS ONE. Snore preserved, hiss removed. ***")
+        elif label == "aggressive":
+            lines.append("    Highest SNR on paper, but its gate hard-zeroes the gaps")
+            lines.append("    (~20% digital silence) and sounds unnatural. Not")
+            lines.append("    recommended for a demo.")
+        else:
+            lines.append("    Alternative preset, for comparison.")
+        lines.append("")
+    lines += [
+        "FIGURES",
+        "-" * 60,
+        f"{stem}__before_after.png   raw vs cleaned spectrogram, shared dB scale",
+        f"{stem}__all_presets.png    every preset stacked",
+        f"{stem}__waveforms.png      amplitude over time, before vs after",
+        f"{stem}__metrics.txt        no-reference quality metrics",
+        "",
+        "Regenerate with:  python make_demo_clip.py --top 2",
+    ]
+    with open(os.path.join(outdir, f"README_{stem}.txt"), "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default=os.path.join(HERE, "output/pcen_sweep/sweep.csv"))
@@ -65,7 +128,7 @@ def main():
     ap.add_argument("--dur", type=float, default=30.0)
     ap.add_argument("--top", type=int, default=1)
     ap.add_argument("--with-deep", action="store_true")
-    ap.add_argument("--outdir", default=os.path.join(HERE, "output/demo"))
+    ap.add_argument("--outdir", default=os.path.join(HERE, "output", "cleaning using PCEN"))
     a = ap.parse_args()
 
     root = os.path.abspath(a.recordings)
@@ -110,11 +173,21 @@ def main():
             except Exception as e:                  # noqa: BLE001
                 print(f"  !!  {p} failed: {type(e).__name__}: {e}")
 
+        # The untouched source slice, exactly as decoded — no level change at all.
+        # This is the audio the cleaning was actually run on. It is kept separate
+        # from BEFORE_raw below, which is the same audio peak-matched for A/B.
+        sf.write(os.path.join(a.outdir, f"{stem}__00_ORIGINAL_unmodified.wav"),
+                 raw.astype(np.float32), SR)
+
         # WAVs, peak-matched so louder != cleaner.
-        for label, y in variants.items():
-            path = os.path.join(a.outdir, f"{stem}__{label}.wav")
-            sf.write(path, normalise(y), SR)
-        print(f"\n  wrote {len(variants)} WAVs to {a.outdir}")
+        order = ["RAW"] + [p for p in presets if p in variants]
+        for i, label in enumerate(order, start=1):
+            tag = "BEFORE_raw" if label == "RAW" else f"AFTER_{label}"
+            path = os.path.join(a.outdir, f"{stem}__{i:02d}_{tag}.wav")
+            sf.write(path, normalise(variants[label]), SR)
+        print(f"\n  wrote {len(variants) + 1} WAVs to {a.outdir}")
+
+        write_readme(a.outdir, stem, name, off, a.dur, order, lead="safe")
 
         # Figures: headline before/after, then every preset stacked.
         lead = "safe" if "safe" in variants else presets[0]
