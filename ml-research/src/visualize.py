@@ -29,14 +29,30 @@ def _spectrogram_db(y: np.ndarray, sr: int):
     return f, t, 10 * np.log10(S + 1e-12)
 
 
-def draw_mel_spectrogram(ax, y: np.ndarray, sr: int, title: str = "", fmax: int = _MEL_FMAX):
+def _mel_power(y: np.ndarray, sr: int, fmax: int) -> np.ndarray:
+    import librosa
+    return librosa.feature.melspectrogram(y=y, sr=sr, n_fft=_MEL_NFFT, hop_length=_MEL_HOP,
+                                          n_mels=_N_MELS, fmin=_MEL_FMIN, fmax=fmax)
+
+
+def mel_peak(y: np.ndarray, sr: int, fmax: int = _MEL_FMAX) -> float:
+    """Peak mel power of `y`, for use as a shared 0 dB reference across panels."""
+    return float(_mel_power(y, sr, fmax).max())
+
+
+def draw_mel_spectrogram(ax, y: np.ndarray, sr: int, title: str = "", fmax: int = _MEL_FMAX,
+                         ref: float | None = None):
     """Draw a log-mel spectrogram (the CNN's input view) onto an existing Axes.
-    Mel params mirror src/features.py. Returns the image (for colorbars)."""
+    Mel params mirror src/features.py. Returns the image (for colorbars).
+
+    `ref` sets the 0 dB reference. Leave it None for a standalone panel; pass a
+    shared value (see `mel_peak`) whenever two panels are meant to be compared,
+    otherwise each is normalised to its own peak and level differences vanish."""
     import librosa
     import librosa.display
     S = librosa.feature.melspectrogram(y=y, sr=sr, n_fft=_MEL_NFFT, hop_length=_MEL_HOP,
                                        n_mels=_N_MELS, fmin=_MEL_FMIN, fmax=fmax)
-    S_db = librosa.power_to_db(S, ref=np.max)
+    S_db = librosa.power_to_db(S, ref=np.max if ref is None else ref)
     img = librosa.display.specshow(S_db, sr=sr, hop_length=_MEL_HOP, x_axis="time",
                                    y_axis="mel", fmin=_MEL_FMIN, fmax=fmax, ax=ax,
                                    cmap="magma", vmin=-80, vmax=0)
@@ -64,11 +80,20 @@ def raw_vs_clean(raw: np.ndarray, clean: np.ndarray, sr: int,
     """Stacked raw-vs-clean comparison. mel=True draws log-mel (the CNN's view)
     instead of the linear STFT spectrogram. Returns a matplotlib Figure."""
     import matplotlib.pyplot as plt
-    draw = draw_mel_spectrogram if mel else draw_spectrogram
     fm = fmax if fmax is not None else (_MEL_FMAX if mel else _FMAX)
     fig, ax = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
-    draw(ax[0], raw, sr, raw_title, fm)
-    img = draw(ax[1], clean, sr, clean_title, fm)
+    if mel:
+        # Both panels share the raw signal's peak as 0 dB. Per-panel ref=np.max
+        # would renormalise each one to its own peak, so a uniformly quieter
+        # CLEANED signal would look identical to RAW — and the single colorbar
+        # below would only ever be valid for the bottom panel.
+        ref = mel_peak(raw, sr, fm)
+        draw_mel_spectrogram(ax[0], raw, sr, raw_title, fm, ref=ref)
+        img = draw_mel_spectrogram(ax[1], clean, sr, clean_title, fm, ref=ref)
+    else:
+        # The linear path is already on an absolute dB scale (_DB_FLOOR/_DB_CEIL).
+        draw_spectrogram(ax[0], raw, sr, raw_title, fm)
+        img = draw_spectrogram(ax[1], clean, sr, clean_title, fm)
     fig.colorbar(img, ax=ax, label="dB", pad=0.01)
     return fig
 
@@ -107,13 +132,20 @@ def presets_grid(raw: np.ndarray, cleaned: dict[str, np.ndarray], sr: int,
     """One spectrogram row for RAW + each preset in `cleaned` (label -> waveform).
     mel=True renders log-mel spectrograms (the CNN input view)."""
     import matplotlib.pyplot as plt
-    draw = draw_mel_spectrogram if mel else draw_spectrogram
     fm = fmax if fmax is not None else (_MEL_FMAX if mel else _FMAX)
     rows = 1 + len(cleaned)
     fig, ax = plt.subplots(rows, 1, figsize=(14, 3 * rows), sharex=True)
-    draw(ax[0], raw, sr, "RAW", fm)
-    for i, (label, y) in enumerate(cleaned.items(), start=1):
-        draw(ax[i], y, sr, label, fm)
+    if mel:
+        # Same shared-reference rule as raw_vs_clean — every preset row is scored
+        # against the RAW peak, so rows are comparable to each other.
+        ref = mel_peak(raw, sr, fm)
+        draw_mel_spectrogram(ax[0], raw, sr, "RAW", fm, ref=ref)
+        for i, (label, y) in enumerate(cleaned.items(), start=1):
+            draw_mel_spectrogram(ax[i], y, sr, label, fm, ref=ref)
+    else:
+        draw_spectrogram(ax[0], raw, sr, "RAW", fm)
+        for i, (label, y) in enumerate(cleaned.items(), start=1):
+            draw_spectrogram(ax[i], y, sr, label, fm)
     fig.tight_layout()
     return fig
 
