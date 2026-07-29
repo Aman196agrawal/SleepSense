@@ -38,6 +38,9 @@
     "react-native-web": "^0.21.0",
     "zustand": "^4.5.2"
   },
+  "overrides": {
+    "@siteed/audio-studio": "3.2.1"
+  },
   "devDependencies": {
     "@babel/core": "^7.24.0",
     "@types/react": "~19.1.0",
