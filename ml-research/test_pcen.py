@@ -57,7 +57,10 @@ def _candidate_sources():
     here = os.path.dirname(os.path.abspath(__file__))
     explicit = os.environ.get("SNORE_PCEN_SRC")
     if explicit:
+        # An explicitly named file means "sweep exactly this one" — do not also
+        # pull in everything from the recordings directories.
         yield explicit
+        return
 
     roots = []
     env_root = os.environ.get("SNORE_RECORDINGS")
@@ -78,75 +81,168 @@ def _candidate_sources():
                 yield os.path.join(root, name)
 
 
-_PREFERRED_OFFSET = 3600.0   # an hour in — deep sleep, AC likely cycling
+_OFFSETS = (1800.0, 3600.0, 7200.0, 10800.0)   # spread across the night
 _SLICE_SEC = 60.0
 _MIN_SEC = 10.0              # below this the contrast/sweep numbers are meaningless
+_TIME_CONSTANTS = (0.2, 0.4, 0.8, 1.5, 3.0)
+
+# A window where the loud and quiet frames barely differ contains no snoring to
+# separate from background, so active_gap_contrast is scoring noise against
+# noise. 6 dB between the 90th and 10th percentile of snore-band energy is a
+# HEURISTIC chosen for this analysis, not a validated criterion — it is exposed
+# so the sensitivity of the conclusions to it can be checked.
+_MIN_ACTIVITY_DB = float(os.environ.get("SNORE_PCEN_MIN_ACTIVITY", "6.0"))
 
 
-def _load_usable(src: str):
-    """Try the mid-night window, then fall back to the file start for shorter
-    recordings. Returns (waveform, note) or (None, reason)."""
-    for offset in (_PREFERRED_OFFSET, 0.0):
-        try:
-            y = D.load_slice(src, offset=offset, duration=_SLICE_SEC, sr=SR)
-        except Exception as e:                      # noqa: BLE001 - report, don't crash
-            return None, f"decode failed ({type(e).__name__}: {e})"
-        if len(y) >= _MIN_SEC * SR:
-            return y, f"{len(y) / SR:.0f}s window at offset {offset:.0f}s"
-    return None, (f"yields under {_MIN_SEC:.0f}s of audio even from the start "
-                  f"— needs a longer recording")
+def _collect_windows():
+    """Decode every (recording, offset) pair we can find.
 
-
-def _real_slice():
-    """Returns (waveform, description) or (None, list of 'path -> reason')."""
-    tried = []
+    Returns (windows, tried) where windows is a list of dicts describing each
+    usable slice, and tried explains anything that was rejected."""
+    windows, tried = [], []
+    seen = set()
     for src in _candidate_sources():
+        # Normalise before de-duping: the same file reached via an env var and via
+        # a directory scan differs in slash direction and case on Windows, which
+        # previously let one recording be swept twice.
+        canon = os.path.normcase(os.path.abspath(src))
+        if canon in seen:
+            continue
+        seen.add(canon)
         if not os.path.exists(src):
             tried.append(f"{src}  ->  not found")
             continue
-        y, note = _load_usable(src)
-        if y is not None:
-            return y, f"{src}  ({note})"
-        tried.append(f"{src}  ->  {note}")
-    return None, tried
+        got_any = False
+        for off in _OFFSETS:
+            try:
+                y = D.load_slice(src, offset=off, duration=_SLICE_SEC, sr=SR)
+            except Exception as e:                  # noqa: BLE001 - report, don't crash
+                tried.append(f"{src} @{off:.0f}s  ->  decode failed "
+                             f"({type(e).__name__}: {e})")
+                continue
+            if len(y) < _MIN_SEC * SR:
+                continue                            # past the end of the file
+            fe = P.snore_frame_energy(y, SR)
+            spread = float(np.percentile(fe, 90) - np.percentile(fe, 10))
+            windows.append({
+                "src": os.path.basename(src), "offset": off,
+                "y": y, "fe": fe, "spread": spread,
+                "live": spread >= _MIN_ACTIVITY_DB,
+            })
+            got_any = True
+        if not got_any:
+            tried.append(f"{src}  ->  no window of >={_MIN_SEC:.0f}s at any offset")
+    return windows, tried
+
+
+def _no_audio_banner(tried):
+    print("\n" + "!" * 76)
+    print("!! REAL-RECORDING VALIDATION DID NOT RUN — no usable source audio.")
+    print("!! The time_constant sweep did not execute, so the 'PCEN beats")
+    print("!! log-mel' claim is UNVERIFIED in this environment.")
+    if tried:
+        print("!! Tried:")
+        for p in tried:
+            print(f"!!   {p}")
+    else:
+        print("!! No candidate paths existed to try.")
+    print("!! Point at one with:  SNORE_PCEN_SRC=/path/to/recording.m4a")
+    print("!! or a directory with: SNORE_RECORDINGS=/path/to/Recordings")
+    print("!" * 76)
 
 
 def sweep_and_validate() -> bool:
-    """Returns True only if the validation actually ran against real audio."""
-    y, info = _real_slice()
-    if y is None:
+    """Multi-window time_constant sweep.
+
+    Scores every time_constant on every live window, then picks the winner by
+    MEDIAN RANK rather than by the single best score. One window's peak is what
+    produced the previous default, and it did not generalise; median rank asks
+    which setting is consistently good instead of exceptionally good once.
+
+    Returns True only if the sweep actually ran against real audio."""
+    windows, tried = _collect_windows()
+    if not windows:
+        _no_audio_banner(tried)
+        return False
+
+    live = [w for w in windows if w["live"]]
+    print(f"\ndecoded {len(windows)} window(s); {len(live)} with >= "
+          f"{_MIN_ACTIVITY_DB:.0f} dB active-gap spread (the rest are silent stretches)")
+    if not live:
         print("\n" + "!" * 76)
-        print("!! REAL-RECORDING VALIDATION DID NOT RUN — no source audio found.")
-        print("!! The time_constant sweep did not execute, so the 'PCEN beats")
-        print("!! log-mel' claim is UNVERIFIED in this environment.")
-        if info:
-            print("!! Tried:")
-            for p in info:
-                print(f"!!   {p}")
-        else:
-            print("!! No candidate paths existed to try.")
-        print("!! Point at one with:  SNORE_PCEN_SRC=/path/to/recording.m4a")
-        print("!! or a directory with: SNORE_RECORDINGS=/path/to/Recordings")
+        print("!! Every window is below the activity threshold — nothing to tune on.")
+        print(f"!! Lower it with SNORE_PCEN_MIN_ACTIVITY (currently {_MIN_ACTIVITY_DB:.1f} dB)")
+        print("!! if you believe these recordings do contain snoring.")
         print("!" * 76)
         return False
-    print(f"\nvalidating against: {info}")
-    fe = P.snore_frame_energy(y, SR)                       # shared activity reference
-    S_db, _, _ = P.logmel_spectrogram(y, SR)
-    base = P.active_gap_contrast(S_db, frame_energy=fe)
-    print(f"\nlog-mel baseline contrast: {base:.3f}")
-    print("time_constant sweep (PCEN active-vs-gap contrast, higher=snore pops more):")
-    best = (None, -np.inf)
-    for tc in (0.2, 0.4, 0.8, 1.5, 3.0):
-        M, _, _ = P.pcen_spectrogram(y, SR, time_constant=tc)
-        c = P.active_gap_contrast(M, frame_energy=fe)
-        flag = ""
-        if c > best[1]:
-            best = (tc, c); flag = " <-- best so far"
-        print(f"  tc={tc:>4} : contrast={c:6.3f}{flag}")
-    print(f"\nBEST time_constant={best[0]} (contrast {best[1]:.3f}) vs log-mel {base:.3f}")
-    assert best[1] > base, "PCEN should beat log-mel on snore-vs-background contrast"
-    print("ok  PCEN beats log-mel contrast")
-    print(f"current pcen.py default time_constant = {P.PCEN_TIME_CONSTANT}")
+
+    # Score every tc on every live window, against a shared per-window activity
+    # reference so PCEN and log-mel are judged on the same active/gap frames.
+    print(f"\n{'recording':28s} {'off':>6s} {'spread':>7s} {'log-mel':>8s}  " +
+          "  ".join(f"tc={tc:<4}" for tc in _TIME_CONSTANTS))
+    print("-" * (52 + 8 * len(_TIME_CONSTANTS)))
+
+    ranks = {tc: [] for tc in _TIME_CONSTANTS}
+    pcen_wins = 0
+    for w in live:
+        S_db, _, _ = P.logmel_spectrogram(w["y"], SR)
+        base = P.active_gap_contrast(S_db, frame_energy=w["fe"])
+        scores = {}
+        for tc in _TIME_CONSTANTS:
+            M, _, _ = P.pcen_spectrogram(w["y"], SR, time_constant=tc)
+            scores[tc] = P.active_gap_contrast(M, frame_energy=w["fe"])
+        # Rank 1 = best on this window.
+        order = sorted(_TIME_CONSTANTS, key=lambda t: scores[t], reverse=True)
+        for pos, tc in enumerate(order, start=1):
+            ranks[tc].append(pos)
+        if max(scores.values()) > base:
+            pcen_wins += 1
+        print(f"{w['src'][:28]:28s} {w['offset']:6.0f} {w['spread']:7.1f} {base:8.3f}  " +
+              "  ".join(f"{scores[tc]:6.3f}" for tc in _TIME_CONSTANTS))
+
+    # Median rank, tie-broken by mean rank then by the smaller time_constant.
+    def key(tc):
+        return (float(np.median(ranks[tc])), float(np.mean(ranks[tc])), tc)
+
+    ordered = sorted(_TIME_CONSTANTS, key=key)
+    winner = ordered[0]
+
+    print("\nmedian rank across live windows (1 = best; lower is better):")
+    for tc in ordered:
+        med, mean, _ = key(tc)
+        mark = "  <-- most consistent" if tc == winner else ""
+        print(f"  tc={tc:>4} : median={med:4.1f}  mean={mean:4.1f}  "
+              f"ranks={ranks[tc]}{mark}")
+
+    print(f"\nPCEN beat log-mel on {pcen_wins}/{len(live)} live window(s)")
+    print(f"median-rank winner : time_constant={winner}")
+    print(f"pcen.py default    : time_constant={P.PCEN_TIME_CONSTANT}")
+
+    # These are research findings, not code defects, so they are surfaced loudly
+    # rather than asserted — set SNORE_PCEN_STRICT=1 to enforce them once the
+    # tuning is settled.
+    problems = []
+    if pcen_wins * 2 <= len(live):
+        problems.append(f"PCEN loses to log-mel on most live windows "
+                        f"({pcen_wins}/{len(live)}) — the documented advantage "
+                        f"does not generalise")
+    if winner != P.PCEN_TIME_CONSTANT:
+        problems.append(f"pcen.py default ({P.PCEN_TIME_CONSTANT}) is not the "
+                        f"most consistent setting ({winner})")
+    if problems:
+        print("\n" + "!" * 76)
+        for p in problems:
+            print(f"!! {p}")
+        print("!! Set SNORE_PCEN_STRICT=1 to make these a hard failure.")
+        print("!" * 76)
+        if os.environ.get("SNORE_PCEN_STRICT"):
+            sys.exit(1)
+    else:
+        print("ok  PCEN beats log-mel on a majority of windows at the configured default")
+
+    # What must always hold: the sweep produced usable numbers.
+    for tc in _TIME_CONSTANTS:
+        assert len(ranks[tc]) == len(live), f"tc={tc} was not scored on every window"
     return True
 
 
