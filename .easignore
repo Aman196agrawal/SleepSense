@@ -19,6 +19,18 @@ demo/
 *.ndjson
 *.log
 
+# The blanket *.wav above is aimed at the multi-GB ml-research corpus, but it
+# also swallowed the one WAV the app bundles — SpectrogramTestScreen's
+# "Play sample" button require()s it, so an EAS build without it fails to
+# resolve the asset. Re-include just that file.
+#
+# Ordering matters: these are gitignore semantics, where the LAST matching
+# pattern wins, so this negation must stay below `*.wav`. It works only because
+# no parent directory of the file is itself excluded — gitignore cannot
+# re-include a file underneath an excluded directory. Keep mobile/assets/ out
+# of the exclusion list above or this silently stops working.
+!mobile/assets/audio/snore-sample.wav
+
 # --- Node / Expo ---
 node_modules/
 .expo/
