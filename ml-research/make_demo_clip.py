@@ -77,10 +77,10 @@ def write_readme(outdir, stem, name, off, dur, order, lead):
         "recombined. No gate, no neural model, no time-varying gain, so the snore's",
         "amplitude envelope is never modulated and the snore cannot 'break'.",
         "",
-        "NOTE: PCEN is NOT used to clean the audio. PCEN is a spectrogram",
-        "normalisation used for VISUALISATION (see src/pcen.py) — it flattens the",
-        "stationary AC/fan floor so the snore stands out to the eye. The denoising",
-        "here is classical spectral subtraction.",
+        "For clarity: this is classical spectral subtraction. PCEN (src/pcen.py)",
+        "is a separate thing — a spectrogram normalisation used for VISUALISATION,",
+        "which flattens the stationary AC/fan floor so the snore stands out to the",
+        "eye. It does not process the audio you are listening to here.",
         "",
         "FILES",
         "-" * 60,
@@ -128,7 +128,7 @@ def main():
     ap.add_argument("--dur", type=float, default=30.0)
     ap.add_argument("--top", type=int, default=1)
     ap.add_argument("--with-deep", action="store_true")
-    ap.add_argument("--outdir", default=os.path.join(HERE, "output", "cleaning using PCEN"))
+    ap.add_argument("--outdir", default=os.path.join(HERE, "output", "denoise_demo"))
     a = ap.parse_args()
 
     root = os.path.abspath(a.recordings)
