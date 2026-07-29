@@ -12,6 +12,7 @@ import NightTimelineScreen from '../screens/NightTimelineScreen';
 import LifestyleLogScreen  from '../screens/LifestyleLogScreen';
 import HealthProfileScreen from '../screens/HealthProfileScreen';
 import GoalsScreen        from '../screens/GoalsScreen';
+import ApiSettingsScreen  from '../screens/ApiSettingsScreen';
 import CalendarScreen    from '../screens/CalendarScreen';
 import SpectrogramTestScreen from '../screens/SpectrogramTestScreen'; // TEMP: live-spectrogram pipeline verification
 
@@ -33,6 +34,7 @@ export type ProfileStackParams = {
   ProfileMain:   undefined;
   HealthProfile: undefined;
   Goals:         undefined;
+  ApiSettings:   undefined;
 };
 
 export type MainTabParams = {
@@ -80,6 +82,7 @@ function ProfileStack() {
       <ProfileStackNav_.Screen name="ProfileMain"    component={ProfileScreen} />
       <ProfileStackNav_.Screen name="HealthProfile"  component={HealthProfileScreen} />
       <ProfileStackNav_.Screen name="Goals"          component={GoalsScreen} />
+      <ProfileStackNav_.Screen name="ApiSettings"    component={ApiSettingsScreen} />
     </ProfileStackNav_.Navigator>
   );
 }

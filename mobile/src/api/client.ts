@@ -1,40 +1,33 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
-import Constants from 'expo-constants';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './tokenStore';
+import { getAuthUrl, getAnalyticsUrl, getIngestionUrl } from './config';
 
-const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, string | undefined>;
-const devHost = Constants.expoConfig?.hostUri?.split(':')[0] ?? 'localhost';
+// These instances deliberately carry NO baseURL. A baseURL passed to
+// axios.create() is captured at import time, which is exactly what made the
+// backend URL un-changeable without a rebuild. Instead the request interceptor
+// below stamps `config.baseURL` from the live config on every request, so
+// saving a new URL in Settings takes effect on the next call — no app reload,
+// no Metro restart, no Gradle build. Every module that already imported these
+// instances keeps working, because the instance identity never changes.
 
-export const AUTH_URL =
-  extra.authUrl ??
-  process.env.EXPO_PUBLIC_AUTH_URL ??
-  `http://${devHost}:8001`;
+export const authClient      = axios.create({ timeout: 10000 });
+export const analyticsClient = axios.create({ timeout: 10000 });
+export const ingestionClient = axios.create({ timeout: 30000 });
 
-export const ANALYTICS_URL =
-  extra.analyticsUrl ??
-  process.env.EXPO_PUBLIC_ANALYTICS_URL ??
-  `http://${devHost}:8002`;
+// ── Base URL + token attach ───────────────────────────────────────────────────
 
-export const INGESTION_URL =
-  extra.ingestionUrl ??
-  process.env.EXPO_PUBLIC_INGESTION_URL ??
-  `http://${devHost}:8003`;
+function attachBaseUrlAndToken(client: AxiosInstance, resolveBaseUrl: () => string) {
+  client.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+    config.baseURL = resolveBaseUrl();
+    const token = await getAccessToken();
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  });
+}
 
-export const authClient      = axios.create({ baseURL: AUTH_URL,      timeout: 10000 });
-export const analyticsClient = axios.create({ baseURL: ANALYTICS_URL, timeout: 10000 });
-export const ingestionClient = axios.create({ baseURL: INGESTION_URL, timeout: 30000 });
-
-// ── Token attach ──────────────────────────────────────────────────────────────
-
-const attachToken = async (config: InternalAxiosRequestConfig) => {
-  const token = await getAccessToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-};
-
-analyticsClient.interceptors.request.use(attachToken);
-authClient.interceptors.request.use(attachToken);
-ingestionClient.interceptors.request.use(attachToken);
+attachBaseUrlAndToken(analyticsClient, getAnalyticsUrl);
+attachBaseUrlAndToken(authClient,      getAuthUrl);
+attachBaseUrlAndToken(ingestionClient, getIngestionUrl);
 
 // ── Token refresh interceptor ─────────────────────────────────────────────────
 // When any protected client gets a 401, silently refresh the access token once
@@ -58,7 +51,9 @@ async function attemptTokenRefresh(): Promise<string> {
   const refreshToken = await getRefreshToken();
   if (!refreshToken) throw new Error('No refresh token');
 
-  const { data } = await axios.post(`${AUTH_URL}/auth/refresh`, { refresh_token: refreshToken });
+  // Bare axios (not authClient) so this never recurses through the 401
+  // interceptor; resolve the URL at call time for the same reason as above.
+  const { data } = await axios.post(`${getAuthUrl()}/auth/refresh`, { refresh_token: refreshToken });
   const newAccess: string = data.access_token;
   const newRefresh: string | undefined = data.refresh_token;
 

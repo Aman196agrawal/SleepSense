@@ -10,9 +10,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Gradients, Radii } from '../theme';
 import AuroraBackground from '../components/AuroraBackground';
 import { useAuthStore } from '../store/authStore';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { ProfileStackNav } from '../navigation/MainNavigator';
 import { scheduleBedtimeReminder } from '../api/notifications';
+import { getApiUrls } from '../api/config';
 
 const MenuItem = ({ icon, label, value, onPress }: any) => (
   <TouchableOpacity style={styles.menuItem} onPress={onPress}>
@@ -60,10 +61,18 @@ export default function ProfileScreen() {
   const [pickerAP, setPickerAP]         = useState<'AM' | 'PM'>('PM');
   const [saving, setSaving]             = useState(false);
   const [privacyMode, setPrivacyMode]   = useState(false);
+  const [authHost, setAuthHost]         = useState('');
 
   useEffect(() => {
     AsyncStorage.getItem('privacyMode').then(val => setPrivacyMode(val === 'true'));
   }, []);
+
+  // Refresh on focus so the row reflects a URL just changed in ApiSettings.
+  useFocusEffect(
+    useCallback(() => {
+      setAuthHost(getApiUrls().authUrl.replace(/^https?:\/\//, ''));
+    }, []),
+  );
 
   useEffect(() => {
     if (user?.bedtime_reminder_time) {
@@ -173,6 +182,8 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>App</Text>
           <View style={styles.card}>
+            <MenuItem icon="server-outline"             label="Backend URLs"     value={authHost} onPress={() => navigation.navigate('ApiSettings')} />
+            <View style={styles.divider} />
             <MenuItem icon="information-circle-outline" label="About SleepSense" onPress={handleAbout} />
             <View style={styles.divider} />
             <MenuItem icon="document-text-outline"      label="Privacy Policy"   onPress={handlePrivacyPolicy} />

@@ -1,5 +1,5 @@
 import { getAccessToken } from './tokenStore';
-import { ANALYTICS_URL } from './client';
+import { getAnalyticsUrl } from './config';
 
 type WSEvent = { event: string; data?: any };
 type EventHandler = (data: any) => void;
@@ -12,7 +12,9 @@ class SleepSenseWS {
     if (this.ws) return;
     const token = await getAccessToken();
     if (!token) return;
-    const wsBase = ANALYTICS_URL.replace(/^http/, 'ws');
+    // Resolved per connect() so a URL change picked up after disconnect()
+    // reconnects against the new host.
+    const wsBase = getAnalyticsUrl().replace(/^http/, 'ws');
     const url = `${wsBase}/ws?token=${encodeURIComponent(token)}`;
     try {
       this.ws = new WebSocket(url);

@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from './src/store/authStore';
+import { loadApiConfig } from './src/api/config';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import MainNavigator from './src/navigation/MainNavigator';
 import { Colors } from './src/theme';
@@ -26,7 +27,9 @@ export default function App() {
   const isLoading = useAuthStore(s => s.isLoading);
   const hydrate   = useAuthStore(s => s.hydrate);
 
-  useEffect(() => { hydrate(); }, [hydrate]);
+  // Stored backend-URL overrides must be in the cache before hydrate() fires
+  // the first /auth/me, otherwise that call goes to the build-time default.
+  useEffect(() => { loadApiConfig().then(hydrate); }, [hydrate]);
 
   return (
     <SafeAreaProvider>
