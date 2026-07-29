@@ -25,7 +25,15 @@ _N_MELS, _MEL_NFFT, _MEL_HOP, _MEL_FMIN, _MEL_FMAX = 128, 1024, 512, 50, 8000
 
 
 def _spectrogram_db(y: np.ndarray, sr: int):
-    f, t, S = signal.spectrogram(y, sr, nperseg=_NPERSEG, noverlap=_NOVERLAP)
+    # scipy silently shrinks nperseg to len(y) for short input but leaves noverlap
+    # alone, so anything under _NPERSEG samples (64 ms at 16 kHz) hit
+    # "noverlap must be less than nperseg". Clamp both together and keep the
+    # 50% overlap ratio.
+    if len(y) == 0:
+        raise ValueError("cannot draw a spectrogram of an empty signal")
+    nperseg = min(_NPERSEG, len(y))
+    noverlap = min(_NOVERLAP, nperseg // 2)
+    f, t, S = signal.spectrogram(y, sr, nperseg=nperseg, noverlap=noverlap)
     return f, t, 10 * np.log10(S + 1e-12)
 
 
