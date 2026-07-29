@@ -296,6 +296,70 @@ def _decode_cursor(cursor: str) -> tuple:
     return datetime.fromisoformat(data["at"]), data["id"]
 
 
+@router.get("/active")
+def get_active_session(
+    user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)
+):
+    """The caller's in-progress session, or null.
+
+    Declared above `/{session_id}` on purpose — FastAPI matches in definition
+    order, so the parameterised route would otherwise swallow "/active".
+
+    Exists so a client that hits 409 on POST /sessions can find out what is
+    blocking it and offer the user a way out, instead of dead-ending.
+    """
+    session = db.query(SleepSession).filter(
+        SleepSession.user_id == user_id,
+        SleepSession.status == "recording",
+    ).first()
+    if not session:
+        return None
+
+    chunk_count = (
+        db.query(TimelineBucket)
+        .filter(TimelineBucket.session_id == session.id)
+        .count()
+    )
+    return {
+        "session_id":  session.id,
+        "started_at":  session.started_at,
+        "chunk_count": chunk_count,
+    }
+
+
+@router.post("/{session_id}/discard", status_code=200)
+def discard_session(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Abandon a recording session without scoring it.
+
+    Deliberately NOT routed through /end. When a session has no chunks, end_session
+    falls back to a deterministic random simulation and writes a fully invented
+    timeline and score — fine as a demo affordance for a real session that failed to
+    upload, wrong for a session the user is explicitly throwing away. This marks it
+    `failed` (already used elsewhere in the codebase, and excluded from the history
+    list, which filters on status == "complete") and leaves the row intact.
+    """
+    session = db.query(SleepSession).filter(
+        SleepSession.id == session_id, SleepSession.user_id == user_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status != "recording":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Session is '{session.status}', not an in-progress recording.",
+        )
+
+    session.status = "failed"
+    session.ended_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+    _logger.info("discarded abandoned session %s for user %s", session_id, user_id)
+    return {"status": "discarded", "session_id": session_id}
+
+
 @router.get("/export")
 def export_sessions(
     from_date: Optional[str] = None,

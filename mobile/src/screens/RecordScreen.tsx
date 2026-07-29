@@ -20,6 +20,7 @@ import { encodeWavBase64 } from '../ml/wav';
 import * as AnalyticsAPI from '../api/analytics.api';
 import * as IngestionAPI from '../api/ingestion.api';
 import { sleepSenseWS } from '../api/ws';
+import { apiErrorMessage } from '../api/errors';
 import { onDeviceClassifier } from '../ml/OnDeviceClassifier';
 
 // Live audio level is now derived from the PCM stream as RMS dBFS (0 dB = full
@@ -59,6 +60,66 @@ const SPEC_H = 150;
 type Phase = 'idle' | 'recording' | 'stopping';
 
 type Props = BottomTabScreenProps<MainTabParams, 'Record'>;
+
+/** Thrown when the user declines to discard a stale session — not an error to report. */
+const CANCELLED = '__start_cancelled__';
+
+/**
+ * POST /sessions, recovering from the 409 the backend raises while a previous
+ * session is still `recording`.
+ *
+ * That happens whenever a session was started but never ended — the app was
+ * killed, or the backend was unreachable at stop time — and it used to dead-end
+ * the Record button with a raw "Request failed with status code 409".
+ *
+ * Discarding goes through /discard rather than /end on purpose: end_session
+ * fabricates a random timeline and score for a session with no chunks, which
+ * would file an invented night under the user's history.
+ */
+async function startSessionWithRecovery() {
+  try {
+    return await AnalyticsAPI.startSession();
+  } catch (err: any) {
+    if (err?.response?.status !== 409) throw err;
+
+    let active: AnalyticsAPI.ActiveSession | null = null;
+    try {
+      active = (await AnalyticsAPI.getActiveSession()).data;
+    } catch {
+      // Backend predates /sessions/active — surface the original 409 instead.
+    }
+    if (!active) throw err;
+
+    // started_at is naive UTC; without a marker `new Date` would read it as local.
+    const raw = active.started_at;
+    const started = new Date(/[zZ]|[+-]\d{2}:\d{2}$/.test(raw) ? raw : `${raw}Z`);
+    const when = isNaN(started.getTime())
+      ? 'earlier'
+      : started.toLocaleString(undefined,
+          { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const mins = isNaN(started.getTime())
+      ? null
+      : Math.max(1, Math.round((Date.now() - started.getTime()) / 60000));
+
+    const body = active.chunk_count > 0
+      ? `A session from ${when}${mins ? ` (${mins} min ago)` : ''} is still open with ` +
+        `${active.chunk_count} chunk${active.chunk_count === 1 ? '' : 's'} recorded. ` +
+        `Discarding it will lose that data.`
+      : `A session from ${when}${mins ? ` (${mins} min ago)` : ''} was never closed. ` +
+        `It has no recorded data, so nothing is lost.`;
+
+    const discard = await new Promise<boolean>((resolve) => {
+      Alert.alert('Unfinished session', body, [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Discard & Start New', style: 'destructive', onPress: () => resolve(true) },
+      ], { cancelable: true, onDismiss: () => resolve(false) });
+    });
+    if (!discard) throw new Error(CANCELLED);
+
+    await AnalyticsAPI.discardSession(active.session_id);
+    return await AnalyticsAPI.startSession();
+  }
+}
 
 export default function RecordScreen({ navigation }: Props) {
   const [phase, setPhase]       = useState<Phase>('idle');
@@ -282,7 +343,7 @@ export default function RecordScreen({ navigation }: Props) {
 
       privacyModeRef.current = privacyMode;
       if (!privacyMode) {
-        const res = await AnalyticsAPI.startSession();
+        const res = await startSessionWithRecovery();
         sessionIdRef.current = res.data.session_id;
         // Capability token authorising ingestion-service chunk uploads for this session.
         uploadTokenRef.current = res.data.upload_token ?? null;
@@ -363,10 +424,17 @@ export default function RecordScreen({ navigation }: Props) {
       if (tickTimerRef.current)  { clearInterval(tickTimerRef.current);  tickTimerRef.current  = null; }
       if (meterTimerRef.current) { clearInterval(meterTimerRef.current); meterTimerRef.current = null; }
       try { await stopRecording(); } catch (_) {}
-      const msg = /permission|denied|microphone/i.test(String(err?.message ?? ''))
+
+      // User chose not to discard the stale session — that is a decision, not a failure.
+      if (err?.message === CANCELLED) { setPhase('idle'); return; }
+
+      // apiErrorMessage reads FastAPI's `detail`; err.message alone gave the
+      // useless raw axios string ("Request failed with status code 409").
+      const isMic = /permission|denied|microphone/i.test(String(err?.message ?? ''));
+      const msg = isMic
         ? 'Please allow microphone access in your device settings to record sleep audio.'
-        : (err?.message ?? 'Could not start recording.');
-      Alert.alert(/permission|denied|microphone/i.test(String(err?.message ?? '')) ? 'Microphone required' : 'Error', msg);
+        : apiErrorMessage(err, 'Could not start recording.');
+      Alert.alert(isMic ? 'Microphone required' : 'Error', msg);
       setPhase('idle');
     }
   };

@@ -1,5 +1,11 @@
 import { analyticsClient } from './client';
 
+export type ActiveSession = {
+  session_id: string;
+  started_at: string;
+  chunk_count: number;
+};
+
 export const getSessions = (limit = 20, cursor?: string) => {
   const params = new URLSearchParams({ limit: String(limit) });
   if (cursor) params.set('cursor', cursor);
@@ -9,6 +15,10 @@ export const getSession       = (id: string)  => analyticsClient.get(`/sessions/
 export const getSessionStatus = (id: string)  => analyticsClient.get(`/sessions/${id}/status`);
 export const startSession     = ()            => analyticsClient.post('/sessions');
 export const endSession       = (id: string)  => analyticsClient.post(`/sessions/${id}/end`);
+/** The in-progress session blocking a new one, or null. Used to recover from 409. */
+export const getActiveSession = ()            => analyticsClient.get<ActiveSession | null>('/sessions/active');
+/** Abandon a recording session without scoring it (unlike endSession). */
+export const discardSession   = (id: string)  => analyticsClient.post(`/sessions/${id}/discard`);
 export const deleteSessionAudio = (id: string) => analyticsClient.delete(`/sessions/${id}/audio`);
 
 export const exportCSV = (from?: string, to?: string) => {
