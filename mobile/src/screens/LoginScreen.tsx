@@ -219,6 +219,17 @@ export default function LoginScreen({ navigation }: Props) {
               <Text style={styles.switchText}>Don't have an account? </Text>
               <Text style={[styles.switchText, { color: Colors.primary }]}>Create one</Text>
             </TouchableOpacity>
+
+            {/* Escape hatch: a wrong backend URL makes login impossible, and the
+                copy of this screen under Profile is behind the login wall. */}
+            <TouchableOpacity
+              onPress={() => navigation.navigate('ApiSettings')}
+              style={styles.serverRow}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="server-outline" size={13} color={Colors.textMuted} />
+              <Text style={styles.serverText}>Can't connect? Backend URLs</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -241,6 +252,8 @@ const styles = StyleSheet.create({
   inputError:    { borderColor: Colors.danger },
   input:         { flex: 1, color: Colors.text, fontSize: 15 },
   errorText:     { color: Colors.danger, fontSize: 12, marginTop: 4, marginLeft: 2 },
+  serverRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 18 },
+  serverText:    { color: Colors.textMuted, fontSize: 12, fontWeight: '600' },
   forgotRow:     { alignSelf: 'flex-end', marginTop: 10 },
   forgotText:    { color: Colors.primary, fontSize: 13, fontWeight: '600' },
   btn:           { borderRadius: Radii.lg, overflow: 'hidden', marginTop: 24, shadowColor: '#A78BFA', shadowOpacity: 0.5, shadowRadius: 18, shadowOffset: { width: 0, height: 0 }, elevation: 10 },
