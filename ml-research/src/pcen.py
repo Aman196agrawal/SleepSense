@@ -27,11 +27,26 @@ VIZ_FMAX = 2000.0          # snore energy lives below ~2 kHz; crop for a readabl
 # `bias`/`eps` terms in their intended regime.
 PCEN_INPUT_SCALE = float(2 ** 31)
 
-# Snore-tuned PCEN defaults (chosen by the time_constant sweep in test_pcen.py).
+# Snore-tuned PCEN defaults (see the time_constant sweep in test_pcen.py).
 PCEN_TIME_CONSTANT = 0.8   # AGC smoothing; slow enough to track the AC floor, fast
-                           # enough that snore bursts (~0.5-2 s) pop above it. Picked
-                           # by the test_pcen.py sweep (best active-vs-gap contrast:
-                           # 0.77 @ 0.8 s vs 0.52 log-mel; 0.2 s eats the snore).
+                           # enough that snore bursts (~0.5-2 s) pop above it.
+                           #
+                           # PROVISIONAL — tuned on a SINGLE 60 s window ("14 June
+                           # recording papa.m4a" at 3600 s), where it measures 0.767
+                           # active-vs-gap contrast against 0.519 for log-mel. That
+                           # figure reproduces exactly, but it does not generalise:
+                           # sweeping all three recordings at 1800/3600/7200/10800 s,
+                           # log-mel scores higher on 3 of the 4 windows that contain
+                           # real snore activity, and the best time_constant moves
+                           # between 0.2 and 3.0 depending on the window. The tuning
+                           # window is itself one of the least active in the corpus
+                           # (5.8 dB active-gap spread; the same file at 1800 s has
+                           # 9.1 dB and there log-mel wins, 0.572 vs 0.452).
+                           #
+                           # So: treat 0.8 as a starting point, not a settled result.
+                           # Re-tune with the multi-window sweep in test_pcen.py — and
+                           # confirm the contrast metric itself is the right target —
+                           # before this feeds the classifier front-end.
 PCEN_GAIN = 0.98
 PCEN_BIAS = 2.0
 PCEN_POWER = 0.5
