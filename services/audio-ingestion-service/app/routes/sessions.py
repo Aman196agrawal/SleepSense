@@ -117,7 +117,9 @@ def start_session(
 @router.post("/{session_id}/chunks", status_code=202)
 async def upload_chunk(
     session_id: str,
-    chunk_index: int      = Form(..., ge=0),
+    # Upper bound is a sanity guard, not a real limit: 20000 chunks at 30 s is
+    # ~7 days of continuous recording, far beyond any single night.
+    chunk_index: int      = Form(..., ge=0, le=20000),
     duration_seconds: int = Form(..., ge=1, le=300),
     audio: UploadFile     = File(...),
     user_id: str          = Depends(get_current_user_id),
@@ -165,12 +167,27 @@ async def upload_chunk(
         db.add(session)
         db.flush()
 
-    # Sequential index enforcement
-    existing_count = db.query(AudioChunk).filter(AudioChunk.session_id == session_id).count()
-    if chunk_index != existing_count:
+    # Reject duplicates, but ALLOW gaps.
+    #
+    # This previously required chunk_index == count(), so a single dropped upload
+    # poisoned the rest of the session: the client increments the index on a
+    # 30-second timer and does not retry, so one network blip five minutes into
+    # an eight-hour night made every subsequent chunk fail the equality check —
+    # roughly 950 chunks silently discarded, with the temp WAVs already deleted.
+    #
+    # Ordering is reconstructed from chunk_index at read time, so a gap is
+    # harmless; only a repeated index is a genuine conflict. The
+    # (session_id, chunk_index) unique constraint on AudioChunk enforces that at
+    # the database level regardless, making the old count() check redundant as
+    # well as harmful.
+    duplicate = db.query(AudioChunk).filter(
+        AudioChunk.session_id == session_id,
+        AudioChunk.chunk_index == chunk_index,
+    ).first()
+    if duplicate:
         raise HTTPException(
-            status_code=422,
-            detail=f"chunk_index must be sequential; expected {existing_count}, got {chunk_index}",
+            status_code=409,
+            detail=f"chunk_index {chunk_index} has already been uploaded for this session",
         )
 
     # Reject oversized uploads via the declared size before buffering the body.

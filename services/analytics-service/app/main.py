@@ -22,6 +22,43 @@ logging.basicConfig(
 Base.metadata.create_all(bind=engine)
 
 
+def _add_missing_columns() -> None:
+    """Add columns that exist on the models but not yet in the database.
+
+    create_all() only creates missing *tables*, so a new column on an existing
+    table is invisible to it and every query referencing that column fails.
+    There is no migration tool wired up here, and the local databases hold real
+    session history worth keeping, so add them in place. Idempotent, and each
+    ALTER is isolated so one failure cannot block the rest.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    for table in Base.metadata.sorted_tables:
+        if not inspector.has_table(table.name):
+            continue
+        existing = {c["name"] for c in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in existing:
+                continue
+            ddl_type = column.type.compile(dialect=engine.dialect)
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(
+                        f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl_type}'
+                    ))
+                logging.getLogger(__name__).info(
+                    "added missing column %s.%s (%s)", table.name, column.name, ddl_type
+                )
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "could not add column %s.%s", table.name, column.name, exc_info=True
+                )
+
+
+_add_missing_columns()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.kafka_consumer import run_consumer

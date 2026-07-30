@@ -6,11 +6,11 @@ import logging
 import random
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -43,6 +43,8 @@ class SessionResponse(BaseModel):
     peak_snoring_hour: Optional[int] = None
     total_chunks: Optional[int] = None
     processed_chunks: Optional[int] = None
+    # "measured" | "simulated" | None (sessions completed before this was tracked).
+    data_source: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,10 +58,23 @@ def _ensure_seeded(user_id: str, db: Session):
 # ── Chunk upload ───────────────────────────────────────────────────────────────
 
 class ChunkData(BaseModel):
-    chunk_index: int
-    avg_intensity: float
-    dominant_class: str
-    snore_event_count: int
+    """Per-chunk stats posted by the client.
+
+    Every field is constrained because none of them were, and the values flow
+    straight into the charts:
+      - chunk_index becomes offset_minutes (chunk_index // 2), so a negative
+        index rendered axis labels like "-1:-1" in TimelineChart.
+      - avg_intensity drives bar heights against a 0-100 scale.
+      - dominant_class must be one of the four the UI knows. ClassDonut and
+        StackedAreaTimeline count anything else into their total but never draw
+        it, so an unrecognised value silently stopped the slices summing to 100%.
+    The upper bound on chunk_index is a sanity guard: 20000 chunks at 30 s is
+    about seven days of continuous recording.
+    """
+    chunk_index: int = Field(..., ge=0, le=20000)
+    avg_intensity: float = Field(..., ge=0, le=100)
+    dominant_class: Literal["snoring", "breathing", "silence", "ambient"]
+    snore_event_count: int = Field(..., ge=0, le=10000)
 
 @router.post("/{session_id}/chunks", status_code=201)
 def upload_chunk(
@@ -187,6 +202,10 @@ def end_session(
         .all()
     )
 
+    # Recorded on the session so callers can tell a measured summary from an
+    # invented one — see the fallback below.
+    data_source = "measured" if buckets else "simulated"
+
     if buckets:
         snoring_buckets = [b for b in buckets if b.dominant_class == "snoring"]
         snore_ratio     = len(snoring_buckets) / len(buckets)
@@ -230,6 +249,9 @@ def end_session(
     session.peak_snoring_hour     = peak_hour
     session.total_chunks          = session.total_chunks or max(1, duration * 2)  # 30s chunks → 2 per minute
     session.processed_chunks      = session.total_chunks
+    # Set last: total_chunks above is filled in with a plausible count even for a
+    # simulated session, so this flag is the only remaining signal.
+    session.data_source           = data_source
 
     # Generate one insight based on the computed score
     rng2 = random.Random(session_id + "insight")

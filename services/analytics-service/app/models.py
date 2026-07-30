@@ -28,6 +28,13 @@ class SleepSession(Base):
     peak_snoring_hour    = Column(Integer, nullable=True)
     total_chunks         = Column(Integer, default=0)
     processed_chunks     = Column(Integer, default=0)
+    # "measured" when the summary came from uploaded chunks, "simulated" when
+    # end_session had none and fell back to random.Random(session_id). Without
+    # this the two are indistinguishable in the API — invented snore ratios and
+    # timelines are returned in exactly the same shape as real ones, and
+    # end_session overwrites total_chunks with a plausible-looking count, so it
+    # cannot be inferred after the fact either.
+    data_source          = Column(String, nullable=True)
     notes                = Column(String, nullable=True)
     created_at           = Column(DateTime, default=_utcnow)
 
