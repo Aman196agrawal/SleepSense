@@ -135,7 +135,13 @@ Key flows:
 - Session lifecycle: `POST /sessions` → `POST /sessions/{id}/chunks` (repeat) → `POST /sessions/{id}/end`
 - Auth: `POST /auth/login` returns access token (15m) + refresh token (30d)
 - Real-time progress: `WSS /ws` WebSocket for chunk processing updates
-- Error format: RFC 7807 Problem Details JSON
+- Error format: FastAPI's default — `{"detail": "..."}` for `HTTPException`, and
+  `{"detail": [{loc, msg, type}, ...]}` for 422 validation errors, both as
+  `application/json`. The RFC 7807 Problem Details format in `docs/05_API_Design.md`
+  is the target, not what ships today. Clients must go through
+  `mobile/src/api/errors.ts:apiErrorMessage()`, which normalises both shapes —
+  rendering the 422 array directly crashes React with "Objects are not valid as a
+  React child".
 
 Full endpoint reference: `docs/05_API_Design.md`
 
