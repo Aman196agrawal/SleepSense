@@ -21,6 +21,7 @@ import * as AnalyticsAPI from '../api/analytics.api';
 import * as IngestionAPI from '../api/ingestion.api';
 import { sleepSenseWS } from '../api/ws';
 import { apiErrorMessage } from '../api/errors';
+import { uploadQueue } from '../api/uploadQueue';
 import { onDeviceClassifier } from '../ml/OnDeviceClassifier';
 
 // Live audio level is now derived from the PCM stream as RMS dBFS (0 dB = full
@@ -267,12 +268,18 @@ export default function RecordScreen({ navigation }: Props) {
         const b64 = encodeWavBase64(pcmChunks, actualSampleRateRef.current, 1, 16);
         const uri = `${FileSystem.cacheDirectory}chunk_${idx}.wav`;
         await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
-        // Binary upload is optional — it feeds the server-side ML pipeline. When
-        // ingestion-service isn't running the request fails; the session still
-        // saves via analytics, so log at warn level. Clean up the temp file after.
-        IngestionAPI.uploadBinaryChunk(sid, uri, idx, CHUNK_SECONDS, uploadTokenRef.current)
-          .catch(err => console.warn('binary upload skipped (ingestion-service unavailable)', err?.message ?? err))
-          .finally(() => { FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {}); });
+        // Hand off to the retry queue rather than uploading inline. This used to
+        // be fire-and-forget with the temp file deleted in .finally(), so a
+        // single failed request lost that chunk permanently — over a whole night
+        // on Wi-Fi that reliably threw audio away. The queue owns the file and
+        // only deletes it once the upload has succeeded or definitively failed.
+        uploadQueue.enqueue({
+          sessionId: sid,
+          uri,
+          index: idx,
+          durationSec: CHUNK_SECONDS,
+          token: uploadTokenRef.current,
+        });
       } catch (err) {
         console.warn('chunk assembly failed', err);
       }
@@ -343,6 +350,7 @@ export default function RecordScreen({ navigation }: Props) {
 
       privacyModeRef.current = privacyMode;
       if (!privacyMode) {
+        uploadQueue.reset();   // per-session counters
         const res = await startSessionWithRecovery();
         sessionIdRef.current = res.data.session_id;
         // Capability token authorising ingestion-service chunk uploads for this session.
@@ -461,6 +469,18 @@ export default function RecordScreen({ navigation }: Props) {
     // remains in the buffer as the final partial chunk.
     try { await stopRecording(); } catch (_) {}
     await flushChunk();
+
+    // Give the retry queue a chance to clear its backlog before we tell
+    // ingestion the session is over. Bounded so a dead server cannot hang the
+    // stop button — anything still queued after this is reported, not silently
+    // dropped, which is what the old fire-and-forget path did.
+    if (!privacyModeRef.current) {
+      const q = await uploadQueue.drain(20000);
+      if (q.pending || q.failed) {
+        console.warn(`[uploadQueue] session ended with ${q.pending} pending, ` +
+                     `${q.failed} failed, ${q.uploaded} uploaded`);
+      }
+    }
 
     // Notify ingestion-service that the session has ended (non-blocking).
     if (sid && !privacyModeRef.current) {
