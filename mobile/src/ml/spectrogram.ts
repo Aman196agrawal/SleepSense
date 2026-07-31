@@ -12,6 +12,9 @@
  * fmin 50, fmax 8000.
  */
 import FFT from 'fft.js';
+import {
+  DENOISE_DEFAULTS, NoiseFloorTracker, spectralSubtract, type DenoiseConfig,
+} from './denoise';
 
 export const SR        = 16_000;
 export const N_FFT     = 1024;
@@ -190,6 +193,12 @@ export class MelSpectrogramStreamer {
   readonly sampleRate: number;
   /** Mel bands with an all-zero filter — see the constructor. Empty is healthy. */
   readonly deadBands: number[];
+  /** Reused per frame — see powerSpectrum(). */
+  private readonly powerBuf: Float32Array;
+  private readonly cleanBuf: Float32Array;
+  private readonly binHz: Float64Array;
+  private readonly tracker = new NoiseFloorTracker();
+  private readonly denoiseCfg: DenoiseConfig;
 
   /**
    * @param nMels      mel bins per column
@@ -197,9 +206,19 @@ export class MelSpectrogramStreamer {
    *   requested 16 kHz and hands back 44.1/48 kHz; the filterbank must be built
    *   for the rate actually delivered or every tone lands in the wrong mel bin.
    */
-  constructor(nMels: number = MEL_DISPLAY, sampleRate: number = SR) {
+  constructor(nMels: number = MEL_DISPLAY, sampleRate: number = SR,
+              denoiseCfg: DenoiseConfig = DENOISE_DEFAULTS) {
     this.nMels = nMels;
     this.sampleRate = sampleRate;
+    this.denoiseCfg = denoiseCfg;
+
+    const nBins = (N_FFT >> 1) + 1;
+    this.powerBuf = new Float32Array(nBins);
+    this.cleanBuf = new Float32Array(nBins);
+    // Bin centre frequencies, so the denoiser can tell the snore band from the
+    // hiss above it without recomputing this every frame.
+    this.binHz = new Float64Array(nBins);
+    for (let k = 0; k < nBins; k++) this.binHz[k] = (k * sampleRate) / N_FFT;
     this.fft = new FFT(N_FFT);
     this.win = hannWindow(N_FFT);
     this.filters = buildMelFilterbank(nMels, N_FFT, sampleRate, FMIN,
@@ -254,25 +273,33 @@ export class MelSpectrogramStreamer {
   /** Mel bins this streamer emits per column. */
   get bins(): number { return this.nMels; }
 
-  private column(frame: Float32Array): Float32Array {
-    // window
+  /**
+   * Windowed power spectrum of one frame, scaled so a full-scale sinusoid
+   * reads ~0 dBFS. Written into `this.powerBuf`, which is reused every frame —
+   * copy it if you need to keep it.
+   */
+  private powerSpectrum(frame: Float32Array): Float32Array {
     for (let i = 0; i < N_FFT; i++) this.fftInput[i] = frame[i] * this.win[i];
     this.fft.realTransform(this.fftOutput, this.fftInput);
     this.fft.completeSpectrum(this.fftOutput);
 
-    const nBins = (N_FFT >> 1) + 1;
-    const power = new Float32Array(nBins);
-    for (let k = 0; k < nBins; k++) {
+    const power = this.powerBuf;
+    for (let k = 0; k < power.length; k++) {
       const re = this.fftOutput[2 * k], im = this.fftOutput[2 * k + 1];
       // Scale to signal amplitude so the dB values below are true dBFS.
       const mag = Math.sqrt(re * re + im * im) * this.ampNorm;
       power[k] = mag * mag;
     }
+    return power;
+  }
 
+  /** Project a power spectrum through the mel filterbank to a display column. */
+  private melColumn(power: Float32Array): Float32Array {
     // Map each bin against the ABSOLUTE [SPEC_DB_FLOOR, SPEC_DB_CEIL] window.
     // Deliberately not relative to this column's own peak: that would make
     // silence as bright as a snore (see the constants' doc comment).
     const span = SPEC_DB_CEIL - SPEC_DB_FLOOR;
+    const nBins = power.length;
     const out = new Float32Array(this.nMels);
     for (let m = 0; m < this.nMels; m++) {
       const f = this.filters[m];
@@ -283,6 +310,47 @@ export class MelSpectrogramStreamer {
     }
     return out;
   }
+
+  private column(frame: Float32Array): Float32Array {
+    return this.melColumn(this.powerSpectrum(frame));
+  }
+
+  /**
+   * Feed PCM and get BOTH the raw and noise-subtracted columns for the same
+   * frames — the two live panels must be built from identical audio, or any
+   * difference on screen could be timing rather than cleaning.
+   *
+   * The noise floor is updated from the RAW spectrum only. Feeding it the
+   * cleaned one would make the estimate chase its own output downward until it
+   * subtracted nothing.
+   */
+  pushDual(samples: Float32Array): { raw: Float32Array[]; clean: Float32Array[] } {
+    const buf = new Float32Array(this.tail.length + samples.length);
+    buf.set(this.tail, 0);
+    buf.set(samples, this.tail.length);
+
+    const raw: Float32Array[] = [];
+    const clean: Float32Array[] = [];
+    let pos = 0;
+    while (pos + N_FFT <= buf.length) {
+      const power = this.powerSpectrum(buf.subarray(pos, pos + N_FFT));
+      raw.push(this.melColumn(power));
+
+      this.tracker.update(power);
+      spectralSubtract(power, this.tracker, this.binHz, this.denoiseCfg, this.cleanBuf);
+      clean.push(this.melColumn(this.cleanBuf));
+
+      pos += HOP;
+    }
+    this.tail = buf.slice(pos);
+    return { raw, clean };
+  }
+
+  /** Forget the learned noise floor (e.g. a new session, or a room change). */
+  resetNoiseFloor(): void { this.tracker.reset(); }
+
+  /** True once the noise estimate has warmed up and cleaning is actually applied. */
+  get denoiseReady(): boolean { return this.tracker.ready; }
 }
 
 // ── colormap + RGBA packing (pure; used by LiveSpectrogram with Skia) ───────────
