@@ -126,5 +126,84 @@ ok(high.peak > high.bins * 0.5, '4000 Hz peak sits in the upper mel bands');
   ok(multi[44] === 1 && multi[45] === 2 && multi[46] === 3 && multi[47] === 4, 'PCM parts concatenated in order');
 })();
 
+// ── mel filterbank coverage ────────────────────────────────────────────────────
+// Regression guard for the dead-band bug: mel points used to be floored to
+// integer FFT bins, so at 44.1/48 kHz adjacent low points collapsed onto the
+// same bin and produced all-zero filters. Those bands read -120 dB forever and
+// showed up as permanent black stripes. Android routinely ignores the requested
+// 16 kHz, so the non-16k rates are the ones that matter.
+(() => {
+  console.log('\n-- mel filterbank coverage --');
+  const RATES = [16000, 44100, 48000];
+  // The display runs at whatever rate the device hands back, so it must be clean
+  // at all three. The CNN geometry (128 mels) is only ever fed 16 kHz, matching
+  // features.py — at 48 kHz the narrowest mel band (46.0 Hz) is thinner than the
+  // FFT bin spacing (46.9 Hz), which no filterbank can resolve. librosa produces
+  // exactly one empty filter for that same config. Asserted separately below as
+  // a *detected* condition rather than pretended away.
+  const CONFIGS = [
+    { nMels: spec.MEL_DISPLAY, label: 'display', rates: RATES },
+    { nMels: 128, label: 'CNN', rates: [16000] },
+  ];
+
+  const observedDead = (s, nMels, sr) => {
+    const noise = new Float32Array(sr);
+    for (let i = 0; i < noise.length; i++) noise[i] = Math.random() * 2 - 1;
+    const cols = s.push(noise);
+    const peak = new Float32Array(nMels);
+    for (const c of cols) for (let m = 0; m < nMels; m++) if (c[m] > peak[m]) peak[m] = c[m];
+    const dead = [];
+    for (let m = 0; m < nMels; m++) if (peak[m] === 0) dead.push(m);
+    return { cols, dead };
+  };
+
+  for (const { nMels, label, rates } of CONFIGS) {
+    for (const sr of rates) {
+      const s = new spec.MelSpectrogramStreamer(nMels, sr);
+      const { cols, dead } = observedDead(s, nMels, sr);
+      ok(cols.length > 0, `${label} ${sr}Hz: produced ${cols.length} columns`);
+      ok(dead.length === 0,
+         `${label} ${sr}Hz: no permanently-black mel band` +
+         (dead.length ? ` (dead: ${dead.slice(0, 10).join(',')}${dead.length > 10 ? '…' : ''})` : ''));
+      ok(s.deadBands.length === 0,
+         `${label} ${sr}Hz: streamer reports no dead bands`);
+    }
+  }
+
+  // Under-resolved config: the streamer must NOTICE, and what it reports must
+  // match what the audio actually shows. A silent black stripe is the bug; a
+  // declared one is a documented limit.
+  {
+    const s = new spec.MelSpectrogramStreamer(128, 48000);
+    const { dead } = observedDead(s, 128, 48000);
+    ok(s.deadBands.length > 0,
+       `CNN 128 mels @48kHz: under-resolution is detected (deadBands=[${s.deadBands.join(',')}])`);
+    ok(JSON.stringify(s.deadBands) === JSON.stringify(dead),
+       `CNN 128 mels @48kHz: reported dead bands match the observed silent ones ` +
+       `(reported [${s.deadBands}], observed [${dead}])`);
+  }
+
+  // Unit-height triangles are what make SPEC_DB_FLOOR/CEIL absolute dBFS: a
+  // full-scale tone must read ~0 dBFS in whichever band it lands in, at any rate.
+  const toDb = v => spec.SPEC_DB_FLOOR + v * (spec.SPEC_DB_CEIL - spec.SPEC_DB_FLOOR);
+  for (const sr of RATES) {
+    const s = new spec.MelSpectrogramStreamer(spec.MEL_DISPLAY, sr);
+    const n = Math.floor(sr * 0.5), tone = new Float32Array(n);
+    for (let i = 0; i < n; i++) tone[i] = Math.sin((2 * Math.PI * 1000 * i) / sr);
+    const cols = s.push(tone);
+    const db = toDb(Math.max(...cols[cols.length - 1]));
+    ok(Math.abs(db) <= 3.0, `${sr}Hz: full-scale 1kHz tone reads ${db.toFixed(1)} dBFS (want ~0)`);
+  }
+
+  // Silence must stay at the floor — the bug this file's constants comment
+  // describes was silence rendering as full brightness.
+  for (const sr of RATES) {
+    const s = new spec.MelSpectrogramStreamer(spec.MEL_DISPLAY, sr);
+    const cols = s.push(new Float32Array(Math.floor(sr * 0.2)));
+    const worst = Math.max(...cols[cols.length - 1]);
+    ok(worst === 0, `${sr}Hz: digital silence stays at 0.0 (got ${worst})`);
+  }
+})();
+
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

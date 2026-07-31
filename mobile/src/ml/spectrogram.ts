@@ -79,25 +79,86 @@ export function pcm16Base64ToFloat32(b64: string): Float32Array {
 }
 
 // ── mel filterbank + window (precomputed once) ──────────────────────────────────
-const hzToMel = (hz: number) => 2595 * Math.log10(1 + hz / 700);
-const melToHz = (m: number) => 700 * (10 ** (m / 2595) - 1);
+// Slaney mel scale — linear below 1 kHz, logarithmic above. This is what
+// librosa uses by default (htk=False), and therefore what
+// ml-research/src/features.py trains on.
+//
+// This module previously used the HTK formula (2595*log10(1+hz/700)). The two
+// disagree substantially — for 10 bands over 50-8000 Hz the second centre lands
+// at 285 Hz under HTK versus 380 Hz under Slaney — so on-device features were
+// being read off a different filterbank than the CNN was trained with. The
+// narrower HTK low bands were also what made bands vanish entirely at 44.1/48
+// kHz, where they fall below the FFT bin spacing.
+const _MEL_F_SP = 200 / 3;          // Hz per mel in the linear region
+const _MEL_MIN_LOG_HZ = 1000;
+const _MEL_MIN_LOG_MEL = _MEL_MIN_LOG_HZ / _MEL_F_SP;   // 15.0
+const _MEL_LOGSTEP = Math.log(6.4) / 27;
 
+const hzToMel = (hz: number): number =>
+  hz >= _MEL_MIN_LOG_HZ
+    ? _MEL_MIN_LOG_MEL + Math.log(hz / _MEL_MIN_LOG_HZ) / _MEL_LOGSTEP
+    : hz / _MEL_F_SP;
+
+const melToHz = (m: number): number =>
+  m >= _MEL_MIN_LOG_MEL
+    ? _MEL_MIN_LOG_HZ * Math.exp(_MEL_LOGSTEP * (m - _MEL_MIN_LOG_MEL))
+    : m * _MEL_F_SP;
+
+/**
+ * Triangular mel filterbank, built the way librosa builds it.
+ *
+ * The previous version rounded each mel point down to an integer FFT bin
+ * (`Math.floor((nFft+1)*hz/sr)`). At 16 kHz the bins are wide enough to absorb
+ * that, but at the 44.1/48 kHz rates Android actually hands back, adjacent low
+ * mel points floor onto the SAME bin. Both interior loops then have an empty
+ * range, leaving an all-zero filter — that band reads 10*log10(1e-12) = -120 dB
+ * for the rest of time and renders as a permanent black stripe. Measured: 1 dead
+ * band at 44.1 kHz, 2 at 48 kHz, and 1 at nMels=128 even at 16 kHz.
+ *
+ * Keeping the mel points in Hz and evaluating the triangles against each bin's
+ * true centre frequency removes the quantisation entirely, and matches
+ * ml-research/src/features.py so the on-device filterbank agrees with the one
+ * used for training.
+ *
+ * `slaney` picks the normalisation:
+ *   false — unit-height triangles (librosa `norm=None`). Every band passes a
+ *     tone at unity gain, which is what keeps SPEC_DB_FLOOR/CEIL meaningful as
+ *     absolute dBFS. Correct for the display.
+ *   true  — area-normalised (librosa's default `norm="slaney"`), where filter
+ *     height falls with bandwidth. Correct for CNN features, because that is
+ *     what features.py trains on — but it would break the dBFS calibration,
+ *     since peak gain varies ~8x across the band.
+ */
 function buildMelFilterbank(nMels: number, nFft: number, sr: number,
-                            fmin: number, fmax: number): Float32Array[] {
+                            fmin: number, fmax: number,
+                            slaney = false): Float32Array[] {
   const nBins = (nFft >> 1) + 1;
   const melMin = hzToMel(fmin), melMax = hzToMel(fmax);
-  // nMels+2 mel points → triangular filters
-  const points = new Float32Array(nMels + 2);
-  for (let i = 0; i < points.length; i++) {
-    const hz = melToHz(melMin + ((melMax - melMin) * i) / (nMels + 1));
-    points[i] = Math.floor(((nFft + 1) * hz) / sr); // → fft bin index
+
+  // nMels+2 mel points, kept in Hz — no rounding to bin indices.
+  const melHz = new Float64Array(nMels + 2);
+  for (let i = 0; i < melHz.length; i++) {
+    melHz[i] = melToHz(melMin + ((melMax - melMin) * i) / (nMels + 1));
   }
+  // Centre frequency of each FFT bin.
+  const binHz = new Float64Array(nBins);
+  for (let k = 0; k < nBins; k++) binHz[k] = (k * sr) / nFft;
+
   const filters: Float32Array[] = [];
-  for (let m = 1; m <= nMels; m++) {
+  for (let m = 0; m < nMels; m++) {
     const f = new Float32Array(nBins);
-    const left = points[m - 1], center = points[m], right = points[m + 1];
-    for (let k = left; k < center; k++) if (center > left) f[k] = (k - left) / (center - left);
-    for (let k = center; k < right; k++) if (right > center) f[k] = (right - k) / (right - center);
+    const lo = melHz[m], mid = melHz[m + 1], hi = melHz[m + 2];
+    const dLo = mid - lo, dHi = hi - mid;
+    const gain = slaney ? 2 / (hi - lo) : 1;
+    for (let k = 0; k < nBins; k++) {
+      const hz = binHz[k];
+      // Rising edge into `mid`, falling edge out of it; the min of the two
+      // ramps is the triangle, clamped at zero outside [lo, hi].
+      const rise = dLo > 0 ? (hz - lo) / dLo : (hz >= lo ? 1 : 0);
+      const fall = dHi > 0 ? (hi - hz) / dHi : (hz <= hi ? 1 : 0);
+      const w = Math.min(rise, fall);
+      if (w > 0) f[k] = w * gain;
+    }
     filters.push(f);
   }
   return filters;
@@ -127,6 +188,8 @@ export class MelSpectrogramStreamer {
   /** One-sided amplitude normalisation: makes a full-scale sinusoid read ~0 dBFS. */
   private readonly ampNorm: number;
   readonly sampleRate: number;
+  /** Mel bands with an all-zero filter — see the constructor. Empty is healthy. */
+  readonly deadBands: number[];
 
   /**
    * @param nMels      mel bins per column
@@ -141,6 +204,27 @@ export class MelSpectrogramStreamer {
     this.win = hannWindow(N_FFT);
     this.filters = buildMelFilterbank(nMels, N_FFT, sampleRate, FMIN,
                                       Math.min(FMAX, sampleRate / 2));
+
+    // A mel band narrower than the FFT bin spacing catches no bin centre and is
+    // therefore all zeros, reading -120 dB forever — a black stripe on screen, a
+    // dead input to the CNN. librosa hits the same limit and warns; say so here
+    // too rather than letting it pass silently. Widening N_FFT or resampling to
+    // 16 kHz before this point are the two ways out.
+    const deadBands: number[] = [];
+    for (let m = 0; m < this.filters.length; m++) {
+      let any = false;
+      const f = this.filters[m];
+      for (let k = 0; k < f.length; k++) if (f[k] > 0) { any = true; break; }
+      if (!any) deadBands.push(m);
+    }
+    this.deadBands = deadBands;
+    if (deadBands.length) {
+      console.warn(
+        `[MelSpectrogramStreamer] ${deadBands.length} mel band(s) are narrower than ` +
+        `the ${(sampleRate / N_FFT).toFixed(1)} Hz FFT bin spacing at nMels=${nMels}, ` +
+        `sr=${sampleRate} and will always read silent: [${deadBands.join(',')}]. ` +
+        `Resample to ${SR} Hz or raise N_FFT.`);
+    }
     this.fftInput = new Float32Array(N_FFT);
     this.fftOutput = this.fft.createComplexArray() as unknown as Float32Array;
     let winSum = 0;
