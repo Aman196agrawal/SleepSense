@@ -63,6 +63,13 @@ services/*/data/*.db-shm
 services/*/data/*.bak_*
 services/*/data/*.db.bak*
 
+# Recorded audio written by the ingestion service's local storage backend
+# (AUDIO_STORAGE_BACKEND=local). These are real recordings of people sleeping —
+# the most sensitive thing this project touches, and this repo is public. The
+# rules above only matched *.db, so the WAVs were untracked but NOT ignored,
+# which one `git add .` would have turned into a permanent public commit.
+services/*/data/audio/
+
 # ML artifacts — trained weights are not committed (use EAS secrets / S3 for the real model)
 *.pt
 *.pth
