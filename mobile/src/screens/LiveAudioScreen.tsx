@@ -27,8 +27,19 @@ import { parseWavPcm16 } from '../ml/wav';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const SPEC_W = Math.round(SCREEN_W - 32);
+
+/**
+ * Temporary evaluation toggle: hide the mel spectrogram and show only the
+ * ORIGINAL vs CLEANED waveforms, so the two traces can be judged on their own.
+ * Flip back to `true` to restore it — nothing else needs changing, and the
+ * spectrogram DSP is skipped entirely while this is off so it costs no CPU.
+ */
+const SHOW_SPECTROGRAM = false;
+
 const SPEC_H = 180;
-const WAVE_H = 96;
+// With the spectrogram hidden there is room to give each waveform more height,
+// which is the point of looking at them in isolation.
+const WAVE_H = SHOW_SPECTROGRAM ? 96 : 150;
 
 export default function LiveAudioScreen() {
   const { startRecording, stopRecording, isRecording } = useAudioRecorder();
@@ -55,8 +66,10 @@ export default function LiveAudioScreen() {
       rawWaveRef.current?.push(pcm);
       cleanWaveRef.current?.push(filterRef.current.process(pcm));
 
-      const cols = streamerRef.current.push(pcm);
-      if (cols.length) specRef.current?.pushColumns(cols);
+      if (SHOW_SPECTROGRAM) {
+        const cols = streamerRef.current.push(pcm);
+        if (cols.length) specRef.current?.pushColumns(cols);
+      }
     } catch (e: any) {
       setErr(String(e?.message ?? e));
     }
@@ -128,8 +141,10 @@ export default function LiveAudioScreen() {
         const slice = pcm.subarray(i, Math.min(i + block, pcm.length));
         rawWaveRef.current?.push(slice);
         cleanWaveRef.current?.push(filterRef.current.process(slice));
-        const cols = streamerRef.current.push(slice);
-        if (cols.length) specRef.current?.pushColumns(cols);
+        if (SHOW_SPECTROGRAM) {
+          const cols = streamerRef.current.push(slice);
+          if (cols.length) specRef.current?.pushColumns(cols);
+        }
         await new Promise(r => setTimeout(r, 100));
       }
     } catch (e: any) {
@@ -167,13 +182,15 @@ export default function LiveAudioScreen() {
         color="#34D399"
       />
 
-      <LiveSpectrogram
-        ref={specRef}
-        nMels={MEL_DISPLAY}
-        width={SPEC_W}
-        height={SPEC_H}
-        style={styles.spec}
-      />
+      {SHOW_SPECTROGRAM && (
+        <LiveSpectrogram
+          ref={specRef}
+          nMels={MEL_DISPLAY}
+          width={SPEC_W}
+          height={SPEC_H}
+          style={styles.spec}
+        />
+      )}
 
       <TouchableOpacity
         style={[styles.btn, isRecording ? styles.stop : styles.start,
