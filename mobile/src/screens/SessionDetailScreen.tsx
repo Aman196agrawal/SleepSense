@@ -67,6 +67,16 @@ export default function SessionDetailScreen({ route, navigation }: Props) {
           {/* Score */}
           <GlassCard variant="hero" glow="violet" radius={Radii.xxl} padding={24} style={{ alignItems: 'center', marginBottom: 20 }}>
             <ScoreRing score={session.sleep_quality_score ?? 0} grade={session.sleep_quality_grade} size={200} />
+            {/* When no audio chunks reached the backend, end_session synthesises
+                the whole summary from random.Random(session_id). It comes back
+                in exactly the same shape as a measured one, so without this the
+                two are indistinguishable to anyone reading the screen. */}
+            {session.data_source === 'simulated' && (
+              <View style={styles.simulatedBadge}>
+                <Ionicons name="flask-outline" size={13} color={Colors.amber} />
+                <Text style={styles.simulatedText}>Simulated — no audio was recorded</Text>
+              </View>
+            )}
           </GlassCard>
 
         {/* Stats */}
@@ -156,6 +166,13 @@ export default function SessionDetailScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  simulatedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14,
+    paddingVertical: 6, paddingHorizontal: 12, borderRadius: Radii.pill,
+    backgroundColor: Colors.amber + '1A',
+    borderWidth: 1, borderColor: Colors.amber + '44',
+  },
+  simulatedText: { color: Colors.amber, fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
   center:      { flex: 1, backgroundColor: Colors.bg, justifyContent: 'center', alignItems: 'center' },
   container:   { padding: 20, paddingBottom: 120 },
   header:      { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },

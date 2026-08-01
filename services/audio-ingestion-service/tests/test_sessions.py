@@ -88,13 +88,38 @@ class TestUploadChunk:
         resp = _upload(client, active_session, other_auth_headers)
         assert resp.status_code == 404
 
-    def test_first_chunk_must_be_index_zero(self, client, auth_headers, active_session):
-        resp = _upload(client, active_session, auth_headers, chunk_index=1)
-        assert resp.status_code == 422
+    # Chunk indices used to be required to arrive strictly sequentially
+    # (chunk_index == count so far). That made a single dropped upload poison
+    # the rest of the session: the client increments the index on a timer and
+    # does not retry, so one network blip rejected every later chunk. Gaps are
+    # now allowed and only duplicates are refused — ordering is reconstructed
+    # from chunk_index at read time.
 
-    def test_sequential_index_enforced(self, client, auth_headers, active_session):
+    def test_first_chunk_need_not_be_index_zero(self, client, auth_headers, active_session):
+        """A session may legitimately start mid-stream after a failed upload."""
+        resp = _upload(client, active_session, auth_headers, chunk_index=1)
+        assert resp.status_code == 202
+
+    def test_gap_in_indices_is_allowed(self, client, auth_headers, active_session):
         _upload(client, active_session, auth_headers, chunk_index=0)
         resp = _upload(client, active_session, auth_headers, chunk_index=2)  # skips 1
+        assert resp.status_code == 202
+
+    def test_missed_chunk_can_be_uploaded_later(self, client, auth_headers, active_session):
+        """The point of allowing gaps: a client retry can still fill the hole."""
+        _upload(client, active_session, auth_headers, chunk_index=0)
+        _upload(client, active_session, auth_headers, chunk_index=2)
+        resp = _upload(client, active_session, auth_headers, chunk_index=1)
+        assert resp.status_code == 202
+
+    def test_duplicate_index_rejected(self, client, auth_headers, active_session):
+        """A repeated index is a real conflict — refuse rather than overwrite."""
+        _upload(client, active_session, auth_headers, chunk_index=0)
+        resp = _upload(client, active_session, auth_headers, chunk_index=0)
+        assert resp.status_code == 409
+
+    def test_negative_index_rejected(self, client, auth_headers, active_session):
+        resp = _upload(client, active_session, auth_headers, chunk_index=-1)
         assert resp.status_code == 422
 
     def test_second_chunk_accepted_after_first(self, client, auth_headers, active_session):

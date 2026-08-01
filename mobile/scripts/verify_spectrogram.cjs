@@ -443,5 +443,104 @@ ok(high.peak > high.bins * 0.5, '4000 Hz peak sits in the upper mel bands');
   }
 })();
 
+// ── waveform ring buffer ───────────────────────────────────────────────────────
+// Wrap-around arithmetic and the samples-to-pixels reduction, which is where a
+// scrolling view goes wrong quietly — a stale tail or a dropped peak looks
+// plausible on screen.
+(() => {
+  console.log('\n-- waveform ring buffer --');
+  const { WaveformRing } = loadTs(path.join(ML, 'waveformRing.ts'));
+  const seq = (from, n) => Float32Array.from({ length: n }, (_, i) => from + i);
+  const eq = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-9);
+
+  {
+    const r = new WaveformRing(10);
+    r.push(seq(1, 4));
+    ok(r.length === 4 && eq(Array.from(r.toArray()), [1, 2, 3, 4]),
+       `partial fill keeps order (${Array.from(r.toArray())})`);
+  }
+  {
+    const r = new WaveformRing(5);
+    r.push(seq(1, 5));
+    ok(eq(Array.from(r.toArray()), [1, 2, 3, 4, 5]), 'exactly full');
+    r.push(seq(6, 2));                       // forces wrap
+    ok(eq(Array.from(r.toArray()), [3, 4, 5, 6, 7]),
+       `wraps and drops the oldest (${Array.from(r.toArray())})`);
+  }
+  {
+    const r = new WaveformRing(4);
+    r.push(seq(1, 10));                      // block bigger than the whole window
+    ok(eq(Array.from(r.toArray()), [7, 8, 9, 10]),
+       `over-long block keeps only the newest tail (${Array.from(r.toArray())})`);
+  }
+  {
+    const r = new WaveformRing(6);
+    for (let i = 1; i <= 100; i++) r.push(Float32Array.of(i));   // many 1-sample pushes
+    ok(eq(Array.from(r.toArray()), [95, 96, 97, 98, 99, 100]),
+       `100 single-sample pushes leave the last 6 (${Array.from(r.toArray())})`);
+  }
+  {
+    const r = new WaveformRing(8);
+    r.push(seq(1, 8)); r.clear();
+    ok(r.length === 0, 'clear() empties');
+    r.push(seq(1, 3));
+    ok(eq(Array.from(r.toArray()), [1, 2, 3]), 'usable again after clear()');
+    r.resize(4); r.push(seq(1, 6));
+    ok(r.capacity === 4 && eq(Array.from(r.toArray()), [3, 4, 5, 6]), 'resize() re-bases');
+  }
+
+  // Pixel reduction.
+  {
+    const r = new WaveformRing(1000);
+    const n = 1000, s = new Float32Array(n);
+    for (let i = 0; i < n; i++) s[i] = Math.sin((2 * Math.PI * 5 * i) / n) * 0.4;
+    r.push(s);
+    const W = 200, H = 100, Y = 0.5;
+    const { xy, count } = r.toPoints(W, H, Y);
+    ok(count === W, `one point per pixel column (${count} for width ${W})`);
+    ok(Math.abs(xy[0]) < 1e-6 && Math.abs(xy[(count - 1) * 2] - W) < 1e-6,
+       'x spans the full width, first to last');
+    let minY = Infinity, maxY = -Infinity, offscreen = 0;
+    for (let i = 0; i < count; i++) {
+      const y = xy[i * 2 + 1];
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      if (y < 0 || y > H) offscreen++;
+    }
+    ok(offscreen === 0, 'every point is inside the canvas');
+    // 0.4 of a 0.5 range across a 100 px box => peaks about 10 px from each edge.
+    ok(minY > 5 && minY < 25 && maxY > 75 && maxY < 95,
+       `peak amplitude maps to the right height (y range ${minY.toFixed(1)}-${maxY.toFixed(1)})`);
+  }
+  {
+    // A single-sample spike between column boundaries must not be averaged away —
+    // that is the difference between seeing a snore onset and missing it.
+    const r = new WaveformRing(2000);
+    const s = new Float32Array(2000);
+    s[1234] = 0.5;
+    r.push(s);
+    const { xy, count } = r.toPoints(100, 100, 0.5);
+    let top = 100;
+    for (let i = 0; i < count; i++) top = Math.min(top, xy[i * 2 + 1]);
+    ok(top < 2, `an isolated peak survives the reduction (top y ${top.toFixed(1)}, want ~0)`);
+  }
+  {
+    const r = new WaveformRing(100);
+    ok(r.toPoints(50, 40, 0.5).count === 0, 'empty ring draws nothing');
+    r.push(Float32Array.of(0.1));
+    ok(r.toPoints(50, 40, 0.5).count === 0, 'a single sample draws nothing (no line yet)');
+  }
+  {
+    // Reused output buffer must not leak stale points between frames.
+    const r = new WaveformRing(500);
+    r.push(new Float32Array(500).fill(0.25));
+    const first = r.toPoints(120, 60, 0.5);
+    const second = r.toPoints(120, 60, 0.5, first.xy);
+    ok(second.count === first.count && second.xy === first.xy,
+       'reuses the caller-supplied point buffer');
+    ok(Math.abs(second.xy[1] - first.xy[1]) < 1e-9, 'reused buffer yields identical output');
+  }
+})();
+
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

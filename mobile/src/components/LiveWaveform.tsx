@@ -16,6 +16,7 @@ import React, {
 } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Canvas, Path, Line, Skia, vec } from '@shopify/react-native-skia';
+import { WaveformRing } from '../ml/waveformRing';
 
 export type LiveWaveformHandle = {
   /** Append samples in [-1, 1]. Older samples fall off the left edge. */
@@ -45,40 +46,25 @@ export const LiveWaveform = forwardRef<LiveWaveformHandle, Props>(
      label, color = '#4C9BE8', style }, ref) => {
 
     const capacity = Math.max(64, Math.round((sampleRate * windowMs) / 1000));
-    // Ring buffer of the most recent `capacity` samples.
-    const ringRef = useRef(new Float32Array(capacity));
-    const writeRef = useRef(0);
-    const filledRef = useRef(0);
+    // Ring buffer + pixel reduction live in ml/waveformRing so the index maths
+    // can be unit-tested without React or Skia.
+    const ringRef = useRef(new WaveformRing(capacity));
+    const ptsRef = useRef<Float32Array | undefined>(undefined);
     const dirtyRef = useRef(false);
     const [path, setPath] = useState(() => Skia.Path.Make());
 
     useEffect(() => {
-      ringRef.current = new Float32Array(capacity);
-      writeRef.current = 0;
-      filledRef.current = 0;
+      ringRef.current.resize(capacity);
       dirtyRef.current = true;
     }, [capacity]);
 
     useImperativeHandle(ref, () => ({
       push: (samples: Float32Array) => {
-        if (!samples.length) return;
-        const ring = ringRef.current;
-        const cap = ring.length;
-        // Only the last `cap` samples can possibly remain visible.
-        const start = samples.length > cap ? samples.length - cap : 0;
-        let w = writeRef.current;
-        for (let i = start; i < samples.length; i++) {
-          ring[w] = samples[i];
-          w = w + 1 === cap ? 0 : w + 1;
-        }
-        writeRef.current = w;
-        filledRef.current = Math.min(cap, filledRef.current + (samples.length - start));
+        ringRef.current.push(samples);
         dirtyRef.current = true;
       },
       clear: () => {
-        ringRef.current.fill(0);
-        writeRef.current = 0;
-        filledRef.current = 0;
+        ringRef.current.clear();
         dirtyRef.current = true;
       },
     }), []);
@@ -91,8 +77,14 @@ export const LiveWaveform = forwardRef<LiveWaveformHandle, Props>(
         if (!alive) return;
         if (dirtyRef.current) {
           dirtyRef.current = false;
-          setPath(buildPath(ringRef.current, writeRef.current, filledRef.current,
-                            width, height, yRange));
+          const { xy, count } = ringRef.current.toPoints(width, height, yRange, ptsRef.current);
+          ptsRef.current = xy;
+          const p = Skia.Path.Make();
+          for (let i = 0; i < count; i++) {
+            const x = xy[i * 2], y = xy[i * 2 + 1];
+            if (i === 0) p.moveTo(x, y); else p.lineTo(x, y);
+          }
+          setPath(p);
         }
         raf = requestAnimationFrame(loop);
       };
@@ -131,43 +123,6 @@ export const LiveWaveform = forwardRef<LiveWaveformHandle, Props>(
     );
   },
 );
-
-/**
- * Ring buffer → Skia path.
- *
- * There are far more samples than horizontal pixels (80 ms at 16 kHz is 1280
- * samples across ~350 px), so plotting every sample would waste most of the
- * work. One point per pixel column, taking the extreme value in that column so
- * a peak between samples is never skipped and the trace keeps its true height.
- */
-function buildPath(ring: Float32Array, write: number, filled: number,
-                   width: number, height: number, yRange: number) {
-  const p = Skia.Path.Make();
-  if (filled < 2) return p;
-
-  const cap = ring.length;
-  const oldest = (write - filled + cap) % cap;
-  const mid = height / 2;
-  const scale = mid / yRange;
-  const cols = Math.max(2, Math.min(width, filled));
-  const per = filled / cols;
-
-  for (let c = 0; c < cols; c++) {
-    const from = Math.floor(c * per);
-    const to = Math.min(filled, Math.floor((c + 1) * per));
-    let extreme = 0;
-    for (let i = from; i < to; i++) {
-      const v = ring[(oldest + i) % cap];
-      if (Math.abs(v) > Math.abs(extreme)) extreme = v;
-    }
-    const x = (c / (cols - 1)) * width;
-    // Screen y grows downward, so a positive amplitude moves up.
-    let y = mid - extreme * scale;
-    if (y < 0) y = 0; else if (y > height) y = height;
-    if (c === 0) p.moveTo(x, y); else p.lineTo(x, y);
-  }
-  return p;
-}
 
 LiveWaveform.displayName = 'LiveWaveform';
 
