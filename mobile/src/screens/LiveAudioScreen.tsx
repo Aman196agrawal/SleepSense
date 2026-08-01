@@ -1,13 +1,15 @@
 /**
- * VERIFICATION SCREEN (temporary) — proves the live-spectrogram pipeline on a
- * real device WITHOUT touching the all-night RecordScreen recorder.
+ * Live original-vs-cleaned audio view.
  *
- *   @siteed/expo-audio-studio  ──base64 PCM──►  MelSpectrogramStreamer  ──cols──►  LiveSpectrogram (Skia)
+ *   @siteed/expo-audio-studio ──base64 PCM──┬─────────────────────► ORIGINAL waveform
+ *                                           └─ SnoreBandFilter ───► CLEANED waveform
  *
- * Mount it temporarily (e.g. add a tab in MainNavigator, or render in place of a
- * screen) and tap Start. You should see a scrolling mel spectrogram that lights
- * up in the low-mid bands when you hum/snore. Once confirmed, we wire the same
- * pipeline into RecordScreen and swap the recorder for the all-night flow.
+ * Both traces are built from the same PCM block, so any difference on screen is
+ * the filter and never a timing skew between the panels.
+ *
+ * A mel spectrogram used to sit below these two. It was removed once the
+ * waveforms were judged sufficient on their own; RecordScreen still renders one,
+ * so LiveSpectrogram and the mel DSP in ml/spectrogram remain in use.
  */
 import React, { useCallback, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
@@ -16,35 +18,20 @@ import { useAudioRecorder, type AudioDataEvent } from '@siteed/expo-audio-studio
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 
-import { LiveSpectrogram, type LiveSpectrogramHandle } from '../components/LiveSpectrogram';
 import { LiveWaveform, type LiveWaveformHandle } from '../components/LiveWaveform';
 import { SnoreBandFilter } from '../ml/biquad';
 import {
-  MelSpectrogramStreamer, pcm16Base64ToFloat32, base64ToBytes, pcm16BytesToFloat32,
-  MEL_DISPLAY, SR,
+  pcm16Base64ToFloat32, base64ToBytes, pcm16BytesToFloat32, SR,
 } from '../ml/spectrogram';
 import { parseWavPcm16 } from '../ml/wav';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const SPEC_W = Math.round(SCREEN_W - 32);
 
-/**
- * Temporary evaluation toggle: hide the mel spectrogram and show only the
- * ORIGINAL vs CLEANED waveforms, so the two traces can be judged on their own.
- * Flip back to `true` to restore it — nothing else needs changing, and the
- * spectrogram DSP is skipped entirely while this is off so it costs no CPU.
- */
-const SHOW_SPECTROGRAM = false;
-
-const SPEC_H = 180;
-// With the spectrogram hidden there is room to give each waveform more height,
-// which is the point of looking at them in isolation.
-const WAVE_H = SHOW_SPECTROGRAM ? 96 : 150;
+const WAVE_H = 150;
 
 export default function LiveAudioScreen() {
   const { startRecording, stopRecording, isRecording } = useAudioRecorder();
-  const streamerRef = useRef(new MelSpectrogramStreamer(MEL_DISPLAY, SR));
-  const specRef = useRef<LiveSpectrogramHandle>(null);
   const rawWaveRef = useRef<LiveWaveformHandle>(null);
   const cleanWaveRef = useRef<LiveWaveformHandle>(null);
   // Time-domain cleaner for the second trace. Holds filter state across blocks,
@@ -66,10 +53,6 @@ export default function LiveAudioScreen() {
       rawWaveRef.current?.push(pcm);
       cleanWaveRef.current?.push(filterRef.current.process(pcm));
 
-      if (SHOW_SPECTROGRAM) {
-        const cols = streamerRef.current.push(pcm);
-        if (cols.length) specRef.current?.pushColumns(cols);
-      }
     } catch (e: any) {
       setErr(String(e?.message ?? e));
     }
@@ -77,8 +60,6 @@ export default function LiveAudioScreen() {
 
   const start = useCallback(async () => {
     setErr(null);
-    streamerRef.current.reset();
-    specRef.current?.clear();
     filterRef.current.reset();
     rawWaveRef.current?.clear();
     cleanWaveRef.current?.clear();
@@ -97,8 +78,7 @@ export default function LiveAudioScreen() {
       // whatever we actually got, or every tone lands in the wrong mel bin.
       const actual = res?.sampleRate ?? SR;
       setRate(actual);
-      if (actual !== streamerRef.current.sampleRate) {
-        streamerRef.current = new MelSpectrogramStreamer(MEL_DISPLAY, actual);
+      if (actual !== filterRef.current.sampleRate) {
         filterRef.current = new SnoreBandFilter(actual);
       }
     } catch (e: any) {
@@ -130,9 +110,7 @@ export default function LiveAudioScreen() {
       const pcm = pcm16BytesToFloat32(data);
 
       setRate(sampleRate);
-      streamerRef.current = new MelSpectrogramStreamer(MEL_DISPLAY, sampleRate);
       filterRef.current = new SnoreBandFilter(sampleRate);
-      specRef.current?.clear();
       rawWaveRef.current?.clear();
       cleanWaveRef.current?.clear();
 
@@ -141,10 +119,6 @@ export default function LiveAudioScreen() {
         const slice = pcm.subarray(i, Math.min(i + block, pcm.length));
         rawWaveRef.current?.push(slice);
         cleanWaveRef.current?.push(filterRef.current.process(slice));
-        if (SHOW_SPECTROGRAM) {
-          const cols = streamerRef.current.push(slice);
-          if (cols.length) specRef.current?.pushColumns(cols);
-        }
         await new Promise(r => setTimeout(r, 100));
       }
     } catch (e: any) {
@@ -182,15 +156,6 @@ export default function LiveAudioScreen() {
         color="#34D399"
       />
 
-      {SHOW_SPECTROGRAM && (
-        <LiveSpectrogram
-          ref={specRef}
-          nMels={MEL_DISPLAY}
-          width={SPEC_W}
-          height={SPEC_H}
-          style={styles.spec}
-        />
-      )}
 
       <TouchableOpacity
         style={[styles.btn, isRecording ? styles.stop : styles.start,
@@ -221,7 +186,6 @@ const styles = StyleSheet.create({
   title: { color: '#fff', fontSize: 18, fontWeight: '700' },
   sub: { color: '#9aa', fontSize: 13, paddingHorizontal: 24, textAlign: 'center' },
   meta: { color: '#667', fontSize: 11, textAlign: 'center' },
-  spec: { marginTop: 8 },
   btn: { paddingVertical: 14, paddingHorizontal: 48, borderRadius: 28, marginTop: 12 },
   start: { backgroundColor: '#A78BFA' },
   stop: { backgroundColor: '#EF4444' },

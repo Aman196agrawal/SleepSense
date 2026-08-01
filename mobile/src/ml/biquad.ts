@@ -90,7 +90,9 @@ export class SnoreBandFilter {
   private readonly sections: Biquad[];
 
   constructor(
-    sampleRate: number,
+    /** Exposed so callers can tell whether the filter needs rebuilding after the
+     *  device overrides the requested rate — coefficients depend on it. */
+    readonly sampleRate: number,
     readonly lowHz = 70,      // safe preset: highpass_hz = 70
     readonly highHz = 1400,   // safe preset: xover_hz = 1400
   ) {
