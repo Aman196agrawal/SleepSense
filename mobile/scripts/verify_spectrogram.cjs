@@ -334,5 +334,114 @@ ok(high.peak > high.bins * 0.5, '4000 Hz peak sits in the upper mel bands');
   }
 })();
 
+// ── snore-band filter (the cleaned WAVEFORM) ───────────────────────────────────
+// The waveform panel needs cleaned audio in the time domain, which spectral
+// subtraction does not give you without an inverse STFT. This band-pass is what
+// produces it, so what matters is that it kills the AC hum and fan hiss while
+// leaving the snore fundamental and its first harmonics essentially untouched.
+(() => {
+  console.log('\n-- snore-band filter (cleaned waveform) --');
+  const bq = loadTs(path.join(ML, 'biquad.ts'));
+  const sr = spec.SR;
+
+  const tone = (hz, sec = 1.0, amp = 0.5) => {
+    const n = Math.floor(sr * sec), a = new Float32Array(n);
+    for (let i = 0; i < n; i++) a[i] = amp * Math.sin((2 * Math.PI * hz * i) / sr);
+    return a;
+  };
+  // Measure on the back half only, after the IIR has settled.
+  const rms = a => {
+    let s = 0; const from = a.length >> 1;
+    for (let i = from; i < a.length; i++) s += a[i] * a[i];
+    return Math.sqrt(s / (a.length - from));
+  };
+  const gainDb = hz => {
+    const f = new bq.SnoreBandFilter(sr);
+    const input = tone(hz);
+    return 20 * Math.log10(rms(f.process(input)) / rms(input) + 1e-12);
+  };
+
+  // 50 Hz only reaches about -12 dB, and that is the honest limit rather than a
+  // shortfall: it sits half an octave under a 70 Hz corner, where a 4th-order
+  // Butterworth has not yet reached its asymptotic 24 dB/octave. The corner
+  // cannot move up without cutting into the 80 Hz snore fundamental, which is
+  // precisely why the offline `safe` preset also chose 70 Hz.
+  //
+  // The 100 Hz mains harmonic passes essentially untouched, by design — it lies
+  // inside the snore band, and no band-pass can separate the two. Removing it
+  // needs a notch, which `safe` also declines to use (notch=False) because the
+  // notch lands on snore energy too.
+  const cases = [
+    ['30 Hz  sub-bass rumble', 30, 'reject', -24],
+    ['50 Hz  mains hum', 50, 'reject', -10],
+    ['100 Hz mains 2nd harmonic', 100, 'pass-ish', null],
+    ['200 Hz snore fundamental', 200, 'keep', -3],
+    ['400 Hz snore harmonic', 400, 'keep', -3],
+    ['800 Hz snore harmonic', 800, 'keep', -3],
+    ['4 kHz  fan hiss', 4000, 'reject', -24],
+    ['7 kHz  hiss', 7000, 'reject', -30],
+  ];
+  for (const [label, hz, kind, threshold] of cases) {
+    const g = gainDb(hz);
+    if (kind === 'keep') {
+      ok(g > threshold, `${label}: ${g.toFixed(1)} dB (want > ${threshold})`);
+    } else if (kind === 'reject') {
+      ok(g < threshold, `${label}: ${g.toFixed(1)} dB (want < ${threshold})`);
+    } else {
+      console.log(`       ${label}: ${g.toFixed(1)} dB (transition band, no assertion)`);
+    }
+  }
+
+  // Streaming must be seamless — the panel is fed in whatever block sizes the
+  // recorder hands over, and a state reset between blocks would click.
+  {
+    const sig = tone(200, 0.5);
+    const whole = new bq.SnoreBandFilter(sr).process(sig);
+    const f = new bq.SnoreBandFilter(sr);
+    const parts = new Float32Array(sig.length);
+    let off = 0;
+    for (let i = 0; i < sig.length; i += 377) {
+      const out = f.process(sig.subarray(i, Math.min(i + 377, sig.length)));
+      parts.set(out, off); off += out.length;
+    }
+    let maxDiff = 0;
+    for (let i = 0; i < sig.length; i++) maxDiff = Math.max(maxDiff, Math.abs(whole[i] - parts[i]));
+    ok(maxDiff < 1e-6, `block-by-block matches one-shot (max diff ${maxDiff.toExponential(1)})`);
+  }
+
+  // Runs for hours: must not drift, blow up, or produce NaN.
+  {
+    const f = new bq.SnoreBandFilter(sr);
+    let worst = 0, bad = false;
+    for (let blk = 0; blk < 200; blk++) {
+      const out = f.process(tone(200, 0.05));
+      for (let i = 0; i < out.length; i++) {
+        if (!Number.isFinite(out[i])) bad = true;
+        if (Math.abs(out[i]) > worst) worst = Math.abs(out[i]);
+      }
+    }
+    ok(!bad, 'no NaN/Inf after 10 s of continuous filtering');
+    ok(worst < 1.0, `output stays bounded (peak ${worst.toFixed(3)} from 0.5 input)`);
+  }
+
+  // A realistic scene: hum + hiss + snore. The cleaned trace should lose most of
+  // its energy to the filter without losing the snore.
+  {
+    const n = sr * 2, raw = new Float32Array(n);
+    let seed = 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff * 2 - 1; };
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      raw[i] = 0.30 * Math.sin(2 * Math.PI * 50 * t)     // dominant mains hum
+             + 0.10 * rnd()                              // broadband hiss
+             + 0.20 * Math.sin(2 * Math.PI * 200 * t);   // snore
+    }
+    const clean = new bq.SnoreBandFilter(sr).process(raw);
+    const dropDb = 20 * Math.log10(rms(clean) / rms(raw));
+    ok(dropDb < -3, `hum-dominated scene loses ${(-dropDb).toFixed(1)} dB overall (want >3)`);
+    ok(rms(clean) > 0.05, `snore survives — cleaned RMS ${rms(clean).toFixed(3)} is not silence`);
+  }
+})();
+
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

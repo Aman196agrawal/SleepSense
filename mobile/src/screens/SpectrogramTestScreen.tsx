@@ -17,6 +17,8 @@ import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 
 import { LiveSpectrogram, type LiveSpectrogramHandle } from '../components/LiveSpectrogram';
+import { LiveWaveform, type LiveWaveformHandle } from '../components/LiveWaveform';
+import { SnoreBandFilter } from '../ml/biquad';
 import {
   MelSpectrogramStreamer, pcm16Base64ToFloat32, base64ToBytes, pcm16BytesToFloat32,
   MEL_DISPLAY, SR,
@@ -25,12 +27,18 @@ import { parseWavPcm16 } from '../ml/wav';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const SPEC_W = Math.round(SCREEN_W - 32);
-const SPEC_H = 220;
+const SPEC_H = 180;
+const WAVE_H = 96;
 
 export default function SpectrogramTestScreen() {
   const { startRecording, stopRecording, isRecording } = useAudioRecorder();
   const streamerRef = useRef(new MelSpectrogramStreamer(MEL_DISPLAY, SR));
   const specRef = useRef<LiveSpectrogramHandle>(null);
+  const rawWaveRef = useRef<LiveWaveformHandle>(null);
+  const cleanWaveRef = useRef<LiveWaveformHandle>(null);
+  // Time-domain cleaner for the second trace. Holds filter state across blocks,
+  // so it is rebuilt whenever the sample rate changes.
+  const filterRef = useRef(new SnoreBandFilter(SR));
   const [err, setErr] = useState<string | null>(null);
   const [rate, setRate] = useState<number>(SR);
   const [playing, setPlaying] = useState(false);
@@ -42,6 +50,11 @@ export default function SpectrogramTestScreen() {
       const pcm = typeof event.data === 'string'
         ? pcm16Base64ToFloat32(event.data)
         : Float32Array.from(event.data as Float32Array);
+      // Both traces come from the same PCM block, so any visible difference is
+      // the filter and never a timing skew between the two panels.
+      rawWaveRef.current?.push(pcm);
+      cleanWaveRef.current?.push(filterRef.current.process(pcm));
+
       const cols = streamerRef.current.push(pcm);
       if (cols.length) specRef.current?.pushColumns(cols);
     } catch (e: any) {
@@ -53,6 +66,9 @@ export default function SpectrogramTestScreen() {
     setErr(null);
     streamerRef.current.reset();
     specRef.current?.clear();
+    filterRef.current.reset();
+    rawWaveRef.current?.clear();
+    cleanWaveRef.current?.clear();
     try {
       const res = await startRecording({
         sampleRate: SR,
@@ -70,6 +86,7 @@ export default function SpectrogramTestScreen() {
       setRate(actual);
       if (actual !== streamerRef.current.sampleRate) {
         streamerRef.current = new MelSpectrogramStreamer(MEL_DISPLAY, actual);
+        filterRef.current = new SnoreBandFilter(actual);
       }
     } catch (e: any) {
       setErr(String(e?.message ?? e));
@@ -101,11 +118,17 @@ export default function SpectrogramTestScreen() {
 
       setRate(sampleRate);
       streamerRef.current = new MelSpectrogramStreamer(MEL_DISPLAY, sampleRate);
+      filterRef.current = new SnoreBandFilter(sampleRate);
       specRef.current?.clear();
+      rawWaveRef.current?.clear();
+      cleanWaveRef.current?.clear();
 
       const block = Math.max(1, Math.round(sampleRate / 10));   // 100ms
       for (let i = 0; i < pcm.length && !cancelRef.current; i += block) {
-        const cols = streamerRef.current.push(pcm.subarray(i, Math.min(i + block, pcm.length)));
+        const slice = pcm.subarray(i, Math.min(i + block, pcm.length));
+        rawWaveRef.current?.push(slice);
+        cleanWaveRef.current?.push(filterRef.current.process(slice));
+        const cols = streamerRef.current.push(slice);
         if (cols.length) specRef.current?.pushColumns(cols);
         await new Promise(r => setTimeout(r, 100));
       }
@@ -126,6 +149,23 @@ export default function SpectrogramTestScreen() {
         {isRecording ? `recording @ ${rate} Hz` : 'idle'}
         {rate !== SR ? `  (device overrode ${SR} Hz)` : ''}
       </Text>
+
+      <LiveWaveform
+        ref={rawWaveRef}
+        width={SPEC_W}
+        height={WAVE_H}
+        sampleRate={rate}
+        label="ORIGINAL"
+        color="#4C9BE8"
+      />
+      <LiveWaveform
+        ref={cleanWaveRef}
+        width={SPEC_W}
+        height={WAVE_H}
+        sampleRate={rate}
+        label={`CLEANED  ${filterRef.current.lowHz}-${filterRef.current.highHz} Hz`}
+        color="#34D399"
+      />
 
       <LiveSpectrogram
         ref={specRef}
