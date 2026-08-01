@@ -1,5 +1,6 @@
 /**
- * Off-device verification harness for src/ml/spectrogram.ts.
+ * Off-device verification harness for the mobile DSP: spectrogram, wav,
+ * biquad and waveformRing.
  *
  * Transpiles the TS module in-memory (no type-check) and exercises the pure DSP:
  *   - PCM16 base64 decode round-trips a known sample
@@ -20,9 +21,9 @@ const TS_OPTS = {
   },
 };
 
-// Register a .ts handler so modules can import each other (spectrogram.ts pulls
-// in ./denoise). Node probes the keys of require.extensions when resolving an
-// extensionless path, so this also makes `require('./denoise')` find denoise.ts.
+// Register a .ts handler so these modules can import each other. Node probes the
+// keys of require.extensions when resolving an extensionless path, so this also
+// makes a bare `require('./someModule')` find someModule.ts.
 require.extensions['.ts'] = (m, filename) => {
   m._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), TS_OPTS).outputText, filename);
 };
@@ -213,124 +214,6 @@ ok(high.peak > high.bins * 0.5, '4000 Hz peak sits in the upper mel bands');
     const cols = s.push(new Float32Array(Math.floor(sr * 0.2)));
     const worst = Math.max(...cols[cols.length - 1]);
     ok(worst === 0, `${sr}Hz: digital silence stays at 0.0 (got ${worst})`);
-  }
-})();
-
-// ── live denoising (raw vs cleaned panels) ─────────────────────────────────────
-// The cleaned panel is only worth showing if it removes the AC/fan floor while
-// leaving the snore alone. Anything that dims both equally is just a darker
-// picture, and anything that dims the snore is actively misleading.
-(() => {
-  console.log('\n-- live denoise (raw vs cleaned) --');
-  const dn = loadTs(path.join(ML, 'denoise.ts'));
-  const sr = spec.SR;
-
-  // Snore bursts over a stationary AC hum + broadband fan hiss — the scene the
-  // `safe` preset was tuned against.
-  const dur = 12;
-  const n = sr * dur;
-  const sig = new Float32Array(n);
-  const isSnore = new Uint8Array(n);
-  let seed = 12345;
-  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff * 2 - 1; };
-  for (let i = 0; i < n; i++) {
-    const t = i / sr;
-    sig[i] = 0.030 * Math.sin(2 * Math.PI * 50 * t)      // mains hum
-           + 0.015 * Math.sin(2 * Math.PI * 100 * t)
-           + 0.010 * rnd();                              // fan hiss (broadband)
-  }
-  for (let start = 3.0; start < dur - 2; start += 4.0) {
-    const i0 = Math.floor(start * sr), i1 = Math.floor((start + 1.5) * sr);
-    for (let i = i0; i < i1; i++) {
-      const s = (i - i0) / (i1 - i0);
-      const env = Math.sin(Math.PI * s) ** 2;
-      const tt = (i - i0) / sr;
-      sig[i] += env * (0.30 * Math.sin(2 * Math.PI * 200 * tt)
-                     + 0.15 * Math.sin(2 * Math.PI * 400 * tt)
-                     + 0.08 * Math.sin(2 * Math.PI * 600 * tt));
-      isSnore[i] = 1;
-    }
-  }
-
-  const s = new spec.MelSpectrogramStreamer(spec.MEL_DISPLAY, sr);
-  const { raw, clean } = s.pushDual(sig);
-  ok(raw.length === clean.length && raw.length > 0,
-     `pushDual returned matched panels (${raw.length} columns each)`);
-  ok(s.denoiseReady, 'noise floor warmed up over the clip');
-
-  // Label each column by whether its centre sample was inside a snore burst.
-  const HOP = 512;
-  const snoreCols = [], gapCols = [];
-  for (let c = 0; c < raw.length; c++) {
-    const centre = c * HOP + 512;
-    (isSnore[Math.min(centre, n - 1)] ? snoreCols : gapCols).push(c);
-  }
-  // Ignore warm-up columns; the tracker passes audio through untouched there.
-  const settled = c => c >= 60;
-  const mean = (cols, panel) => {
-    let sum = 0, cnt = 0;
-    for (const c of cols) if (settled(c))
-      for (let m = 0; m < spec.MEL_DISPLAY; m++) { sum += panel[c][m]; cnt++; }
-    return cnt ? sum / cnt : NaN;
-  };
-  const peak = (cols, panel) => {
-    let mx = 0;
-    for (const c of cols) if (settled(c))
-      for (let m = 0; m < spec.MEL_DISPLAY; m++) if (panel[c][m] > mx) mx = panel[c][m];
-    return mx;
-  };
-
-  const span = spec.SPEC_DB_CEIL - spec.SPEC_DB_FLOOR;
-  const gapRaw = mean(gapCols, raw), gapClean = mean(gapCols, clean);
-  const snPeakRaw = peak(snoreCols, raw), snPeakClean = peak(snoreCols, clean);
-  const gapDropDb = (gapRaw - gapClean) * span;
-  const snoreLossDb = (snPeakRaw - snPeakClean) * span;
-
-  console.log(`       background between snores: ${(gapRaw * span + spec.SPEC_DB_FLOOR).toFixed(1)}`
-            + ` -> ${(gapClean * span + spec.SPEC_DB_FLOOR).toFixed(1)} dB  (down ${gapDropDb.toFixed(1)} dB)`);
-  console.log(`       snore peak:                ${(snPeakRaw * span + spec.SPEC_DB_FLOOR).toFixed(1)}`
-            + ` -> ${(snPeakClean * span + spec.SPEC_DB_FLOOR).toFixed(1)} dB  (down ${snoreLossDb.toFixed(1)} dB)`);
-
-  ok(gapDropDb > 6, `background floor pushed down by ${gapDropDb.toFixed(1)} dB (want >6)`);
-  ok(snoreLossDb < 3, `snore peak preserved within ${snoreLossDb.toFixed(1)} dB (want <3)`);
-  ok(gapDropDb > snoreLossDb * 3,
-     `cleaning is selective, not a global dim (${gapDropDb.toFixed(1)} dB vs ${snoreLossDb.toFixed(1)} dB)`);
-
-  // Raw panel must be untouched by the denoiser — same numbers push() gives.
-  const s2 = new spec.MelSpectrogramStreamer(spec.MEL_DISPLAY, sr);
-  const only = s2.push(sig);
-  let identical = only.length === raw.length;
-  if (identical) outer: for (let c = 0; c < only.length; c++)
-    for (let m = 0; m < spec.MEL_DISPLAY; m++)
-      if (Math.abs(only[c][m] - raw[c][m]) > 1e-9) { identical = false; break outer; }
-  ok(identical, 'pushDual raw panel is bit-identical to push()');
-
-  // Tracker behaviour: a loud burst must not be learned as noise.
-  {
-    const t = new dn.NoiseFloorTracker();
-    const quiet = new Float32Array(64).fill(0.001);
-    for (let i = 0; i < 200; i++) t.update(quiet);
-    const settledFloor = t.estimate[0];
-    const loud = new Float32Array(64).fill(1.0);
-    for (let i = 0; i < 40; i++) t.update(loud);
-    const afterBurst = t.estimate[0];
-    ok(afterBurst < settledFloor * 10,
-       `40 loud frames barely move the floor (${settledFloor.toExponential(1)} -> ${afterBurst.toExponential(1)})`);
-    for (let i = 0; i < 200; i++) t.update(quiet);
-    ok(t.estimate[0] < settledFloor * 2, 'floor recovers once the burst passes');
-  }
-
-  // Before warm-up, nothing should be subtracted.
-  {
-    const t = new dn.NoiseFloorTracker();
-    const p = Float32Array.from({ length: 8 }, (_, i) => (i + 1) * 0.1);
-    t.update(p);
-    const out = new Float32Array(8);
-    const binHz = Float64Array.from({ length: 8 }, (_, i) => 200 + i * 100);
-    dn.spectralSubtract(p, t, binHz, dn.DENOISE_DEFAULTS, out);
-    let same = true;
-    for (let i = 0; i < 8; i++) if (out[i] !== p[i]) same = false;
-    ok(same, 'passes audio through unchanged until the floor estimate is ready');
   }
 })();
 

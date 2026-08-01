@@ -30,7 +30,7 @@ const SPEC_W = Math.round(SCREEN_W - 32);
 const SPEC_H = 180;
 const WAVE_H = 96;
 
-export default function SpectrogramTestScreen() {
+export default function LiveAudioScreen() {
   const { startRecording, stopRecording, isRecording } = useAudioRecorder();
   const streamerRef = useRef(new MelSpectrogramStreamer(MEL_DISPLAY, SR));
   const specRef = useRef<LiveSpectrogramHandle>(null);
@@ -141,9 +141,9 @@ export default function SpectrogramTestScreen() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <Text style={styles.title}>Live Spectrogram — pipeline test</Text>
+      <Text style={styles.title}>Live Audio</Text>
       <Text style={styles.sub}>
-        Tap Start and hum/snore. Energy should light up the low-mid bands.
+        Original against cleaned, in real time. Tap Start and snore, or replay the bundled sample.
       </Text>
       <Text style={styles.meta}>
         {isRecording ? `recording @ ${rate} Hz` : 'idle'}
